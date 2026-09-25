@@ -216,6 +216,46 @@ with tempfile.TemporaryDirectory() as directory:
     dialog.passphrase.setText("typed")
     assert dialog.start_button.isEnabled() and dialog.start_button.property("role") == "primary"
     dialog.deleteLater()
+    # Restore sidebar: stored backups by friendly name drive the (hidden) archive model.
+    # (mounting is patched throughout: these archives exist only in this test.)
+    with patch.object(window, "ensure_mounted", return_value=True), patch.object(window, "_load_visible_archive", lambda *a, **k: None):
+        window._apply_archive_listing({"archives": [
+            {"name": "keep-host-2026-09-24_040000", "time": "2026-09-24T04:00:00.000000"},
+            {"name": "keep-host-2026-09-25_085149", "time": "2026-09-25T08:51:49.000000"}]}, select_latest=True)
+        panel = window.backup_list_panel
+        assert panel.list.count() == 2 and window.archive_combo.isHidden()
+        assert "newest" in panel.list.item(0).data(main.Qt.UserRole + 1)
+        assert "keep-host" not in panel.list.item(0).text()
+        panel.list.setCurrentRow(1)
+        assert window.archive_combo.currentText() == "keep-host-2026-09-24_040000"
+        assert window.friendly_archive("keep-host-2026-09-24_040000") in window.archive_friendly.text()
+        window.archive_combo.setCurrentIndex(0)
+        assert panel.list.currentRow() == 0
+        window.view_switch.setCurrentIndex(1)
+        assert window.sidebar_stack.currentWidget() is window.backup_list_panel
+        window.view_switch.setCurrentIndex(0)
+        assert window.sidebar_stack.currentWidget() is window.backup_panel
+        # Search hides tiles (and empty sections); a click anywhere on a tile toggles it once.
+        picker = window.apps_picker
+        picker.populate([main.CatalogEntry("Firefox", None, [("f", "/f")], "firefox", "applications"),
+                     main.CatalogEntry("Krita", None, [("k", "/k")], "krita", "applications")])
+        section = picker._sections["applications"]
+        picker.search.setText("fire")
+        assert [section.item(i).isHidden() for i in range(section.count())] == [False, True]
+        picker.search.setText("")
+        from PySide6.QtTest import QTest
+        from PySide6.QtCore import QPoint
+        window.resize(1200, 800)
+        window.show()
+        window.view_switch.setCurrentIndex(1)
+        app.processEvents()
+        rect = section.visualItemRect(section.item(0))
+        QTest.mouseClick(section.viewport(), main.Qt.LeftButton, pos=rect.center())
+        assert section.item(0).checkState() == main.Qt.Checked
+        QTest.mouseClick(section.viewport(), main.Qt.LeftButton, pos=rect.topLeft() + QPoint(18, rect.height() // 2))
+        assert section.item(0).checkState() == main.Qt.Unchecked  # the drawn checkbox: exactly one toggle
+        window.view_switch.setCurrentIndex(0)
+        window.hide()
     # Recovery access: verified facts apart from dated personal confirmations.
     from keep_ui import recovery_access
     import recovery_test
@@ -342,12 +382,15 @@ with tempfile.TemporaryDirectory() as directory:
     dialog.select_all_button.click()
     assert not dialog.all_data.isChecked()
     assert dialog.selection() == ["firefox"]
-    assert dialog.items.viewMode() == main.QListWidget.IconMode
+    # Tiles: checkbox inside the tile next to icon + name (CheckTileDelegate).
+    from keep_ui.checkable_list import CheckTileDelegate
+    assert isinstance(dialog.items.itemDelegate(), CheckTileDelegate) and dialog.items.itemDelegate().framed
+    assert dialog.items.gridSize().width() == 210
     assert not dialog.items.item(0).icon().isNull()
     dialog.view_mode.setCurrentIndex(1)
-    assert dialog.items.viewMode() == main.QListWidget.ListMode
+    assert not dialog.items.itemDelegate().framed
     assert dialog.items.isWrapping()
-    assert dialog.items.gridSize().width() == 220
+    assert dialog.items.gridSize().width() == 280
     assert dialog.selection() == ["firefox"]
     dialog.view_mode.setCurrentIndex(0)
     dialog.items.setCurrentRow(0)

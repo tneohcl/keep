@@ -6,6 +6,7 @@ button whose value wraps), sitting on the window colour. btn_backup and
 btn_stop are created here for the controller but placed by MainWindow at the
 trailing end of the toolbar.
 """
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy
 
 import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
@@ -26,19 +27,21 @@ class BackupPanel(QWidget):
         shell.setSpacing(16)
         self.plan_panel = SettingsList("What's backed up")
         controls = (
-            ("Folders", "source_choice", controller.configure_backup_sources),
-            ("Applications", "apps_choice", controller.configure_applications),
-            ("System settings", "settings_choice", lambda: controller.configure_applications("system")),
-            ("Destination", "destination_choice", controller.change_backup_destination),
-            ("Schedule", "schedule_button", controller.configure_schedule),
+            ("Folders", "source_choice", "folder", controller.configure_backup_sources),
+            ("Applications", "apps_choice", "applications-all", controller.configure_applications),
+            ("System settings", "settings_choice", "preferences-system", lambda: controller.configure_applications("system")),
+            ("Destination", "destination_choice", "drive-harddisk", controller.change_backup_destination),
+            ("Schedule", "schedule_button", "chronometer", controller.configure_schedule),
         )
-        for label, name, callback in controls:
-            row = self.plan_panel.addRow(label, "", lambda checked=False, callback=callback: callback())
+        for label, name, icon, callback in controls:
+            row = self.plan_panel.addRow(label, "", lambda checked=False, callback=callback: callback(),
+                                         icon=QIcon.fromTheme(icon))
             setattr(self, name, row)
         shell.addWidget(self.plan_panel)
         self.recovery_panel = SettingsList("Recovery")
         self.recovery_access_row = self.recovery_panel.addRow(
-            "Recovery access", "", lambda checked=False: controller.show_recovery_access())
+            "Recovery access", "", lambda checked=False: controller.show_recovery_access(),
+            icon=QIcon.fromTheme("security-high"))
         shell.addWidget(self.recovery_panel)
         shell.addStretch(1)
 

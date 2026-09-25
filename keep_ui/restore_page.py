@@ -4,7 +4,7 @@ import consumer
 
 class RestorePage(QWidget):
     """Restore controls; signals are connected after tab construction to avoid startup mounts."""
-    CONTROL_NAMES = ('apps_picker', 'archive_actions_button', 'archive_combo', 'btn_compare_archives', 'btn_delete_archive', 'btn_restore', 'delete_progress', 'folders_picker', 'fs_model', 'lbl_delete_status', 'section_combo', 'tabs', 'tree')
+    CONTROL_NAMES = ('apps_picker', 'archive_actions_button', 'archive_combo', 'archive_friendly', 'btn_compare_archives', 'btn_delete_archive', 'btn_restore', 'delete_progress', 'folders_picker', 'fs_model', 'lbl_delete_status', 'section_combo', 'tabs', 'tree')
 
     def __init__(self, controller, config, mountpoint, home_in_archive, picker_factory):
         super().__init__()
@@ -27,12 +27,18 @@ class RestorePage(QWidget):
         browse_layout.addWidget(restore_subtitle)
 
         archive_row = QHBoxLayout()
-        archive_row.addWidget(QLabel("Backup:"))
+        # The backup is chosen in the sidebar's "Restore from" list; this row
+        # names it in words. archive_combo stays as the (hidden) model of
+        # real Borg archive names that the restore code reads.
+        self.archive_friendly = QLabel("Choose a backup in the list on the left.")
+        self.archive_friendly.setWordWrap(True)
+        archive_row.addWidget(self.archive_friendly, stretch=1)
         self.archive_combo = QComboBox()
         self.archive_combo.setAccessibleName("Backup archive to restore")
         self.archive_combo.currentIndexChanged.connect(controller.on_archive_changed)
-        archive_row.addWidget(self.archive_combo, stretch=1)
-        self.archive_actions_button = QPushButton("Manage backup")
+        self.archive_combo.hide()
+        archive_row.addWidget(self.archive_combo)
+        self.archive_actions_button = QPushButton("Manage")
         archive_menu = QMenu(self.archive_actions_button)
         self.btn_compare_archives = archive_menu.addAction("Compare Backups…", controller.compare_archives)
         archive_menu.addSeparator()
@@ -56,14 +62,14 @@ class RestorePage(QWidget):
         self.apps_picker = picker_factory(
             "Check the items you want to restore.", filter_installed=True,
             ensure_mounted_cb=controller.ensure_mounted, touch_activity_cb=controller._touch_activity,
-            backup_now_cb=controller.start_backup,
+            backup_now_cb=controller.start_backup, search_placeholder="Find an application",
         )
         self.tabs.addTab(self.apps_picker, "Apps && data")
 
         self.folders_picker = picker_factory(
             "Check the folders you want to restore.",
             ensure_mounted_cb=controller.ensure_mounted, touch_activity_cb=controller._touch_activity,
-            backup_now_cb=controller.start_backup,
+            backup_now_cb=controller.start_backup, search_placeholder="Find a folder",
         )
         self.tabs.addTab(self.folders_picker, "Folders")
 
