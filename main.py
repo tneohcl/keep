@@ -3066,7 +3066,9 @@ class MainWindow(QWidget):
         self._refresh_setup_labels()
 
     def _refresh_activity(self):
-        entries = _consumer_module.recent_activity(LOGDIR)
+        repo, info, _count, _when = getattr(self, "_verified_repo_info", (None, None, None, None))
+        repo_id = ((info or {}).get("repository") or {}).get("id") if repo == REPO else None
+        entries = _consumer_module.recent_activity(LOGDIR, REPO, repo_id)
         for index, (timestamp, outcome) in enumerate(self.activity_rows):
             visible = index < len(entries) or index == 0
             timestamp.setVisible(visible)
@@ -3317,6 +3319,7 @@ class MainWindow(QWidget):
         # Recovery access shows these as "Verified by Keep" facts.
         self._verified_repo_info = (queried_repo, info, len(listing.get("archives", [])) if listing else None,
                                     datetime.now().astimezone().isoformat(timespec="seconds"))
+        self._refresh_activity()  # now that the repository ID is known
         if info:
             stats = info.get("cache", {}).get("stats", {})
             size_gb = stats.get("unique_csize", 0) / (1024**3)

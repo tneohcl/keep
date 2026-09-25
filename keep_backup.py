@@ -178,6 +178,18 @@ def _check_repo_access(repo: str, env: dict, log) -> bool:
         return False
 
     _write(log, "repository access check passed")
+    # Borg's own facts, not the settings label: the ID tells a re-created
+    # repository at the same path apart (Recent activity filters on it).
+    try:
+        info = json.loads(p.stdout or "{}")
+        repo_id = (info.get("repository") or {}).get("id")
+        mode = (info.get("encryption") or {}).get("mode")
+        if repo_id:
+            _write(log, f"Repository ID: {repo_id}")
+        if mode:
+            _write(log, f"Repository encryption (reported by Borg): {mode}")
+    except (ValueError, AttributeError):
+        pass
     return True
 
 
@@ -516,9 +528,9 @@ def _run_with_log(config_path: str, log) -> int:
     _write(log, f"Repository: {repo}")
     protection = dest_cfg.get("encryption")
     if protection:
-        _write(log, f"Repository protection: {protection}")
-    else:
-        _write(log, "Repository protection: existing/unknown (not inferred from secrets)")
+        # Recorded when Keep created the repository; Borg's own report
+        # follows the access check below.
+        _write(log, f"Repository protection (at setup): {protection}")
 
     try:
         with RepositoryLock(repo, wait=REPOSITORY_LOCK_WAIT_SECONDS):
