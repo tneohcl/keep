@@ -237,6 +237,7 @@ with tempfile.TemporaryDirectory() as directory:
         assert window.sidebar_stack.currentWidget() is window.backup_panel
         # Search hides tiles (and empty sections); a click anywhere on a tile toggles it once.
         picker = window.apps_picker
+        picker._installed_apps_provider = None  # don't depend on what this machine has installed
         picker.populate([main.CatalogEntry("Firefox", None, [("f", "/f")], "firefox", "applications"),
                      main.CatalogEntry("Krita", None, [("k", "/k")], "krita", "applications")])
         section = picker._sections["applications"]
