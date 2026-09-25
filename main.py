@@ -15,6 +15,8 @@ from keep_ui.restore_page import RestorePage
 from keep_ui.common import DisclosureSection
 from keep_ui.restore_results import show_restore_results
 from keep_ui.application_selection import ApplicationSelectionDialog
+from keep_ui.recovery_test_dialog import RecoveryTestDialog
+import recovery_test
 import base64
 import glob
 import json
@@ -2720,6 +2722,8 @@ class MainWindow(QWidget):
         self.action_backup_sources.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.action_schedule.setShortcut(QKeySequence("Ctrl+Shift+A"))
         backup_menu.addSeparator()
+        self.action_test_recovery = backup_menu.addAction("Test recovery…", self.test_recovery)
+        backup_menu.addSeparator()
         self.action_exit = backup_menu.addAction("Exit", self.close)
         self.action_exit.setMenuRole(QAction.QuitRole)
         self.action_exit.setShortcut(QKeySequence(QKeySequence.Quit) if not QKeySequence(QKeySequence.Quit).isEmpty() else QKeySequence("Ctrl+Q"))
@@ -2749,6 +2753,7 @@ class MainWindow(QWidget):
 
         self.backup_panel = BackupPanel(self)
         self.status_page = StatusPage()
+        self.status_page.recoveryTestRequested.connect(self.test_recovery)
         self.restore_page = RestorePage(self, CONFIG, MOUNTPOINT, HOME_IN_ARCHIVE, ItemPicker)
         # Existing application handlers use these stable widget references. Views
         # own their construction; no view imports main or executes backend work.
@@ -2942,6 +2947,8 @@ class MainWindow(QWidget):
         self.action_change_destination.setEnabled(enabled)
         self.action_edit_excludes.setEnabled(enabled)
         self.btn_compare_archives.setEnabled(enabled)
+        self.btn_test_recovery.setEnabled(enabled)
+        self.action_test_recovery.setEnabled(enabled)
 
     # --- status ---
 
@@ -3055,6 +3062,74 @@ class MainWindow(QWidget):
                 timestamp.setText("No activity yet")
                 outcome.setText("Your backup results will appear here.")
 
+    def _refresh_facts(self, dest):
+        """Backup completed / Integrity checked / Recovery tested, each with its
+        own result and date, from the same sources as the Details rows."""
+        facts = self.status_facts
+        verdict, ts = last_backup_attempt_status()
+        state, description = {
+            "ok": ("ok", "Your selected files were saved"),
+            "warning": ("warning", "Finished with warnings. Show the log for details."),
+            "stopped": ("warning", "The last backup was stopped before it finished"),
+            "FAILED": ("error", "The last backup didn't finish. Show the log for details."),
+        }.get(verdict, ("never", "Your selected files were saved"))
+        facts.setFact("backup", state, friendly_timestamp(ts) if ts else "", description)
+
+        checks = []
+        for prefix in ("check", "check-verify-data"):
+            outcome, when = log_verdict(prefix, ["completed successfully in", "Repository check complete"], ["FAILED"])
+            if when:
+                checks.append((outcome, when))
+        health_path = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "keep/last-check.json"
+        try:
+            health = json.loads(health_path.read_text(encoding="utf-8"))
+            if health.get("repository") == dest.get("repo") and (health.get("finished") or health.get("started")):
+                checks.append((health.get("result", "unknown"), health.get("finished") or health.get("started")))
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+
+        def moment(item):
+            try:
+                return datetime.fromisoformat(item[1]).astimezone().timestamp()
+            except (TypeError, ValueError):
+                return 0
+
+        if checks:
+            outcome, when = max(checks, key=moment)
+            state, description = {
+                "ok": ("ok", "Stored data is readable and consistent"),
+                "success": ("ok", "Stored data is readable and consistent"),
+                "running": ("info", "An integrity check is running now"),
+                "FAILED": ("error", "The last check found a problem. Show the log for details."),
+                "failed": ("error", "The last check found a problem. Show the log for details."),
+            }.get(outcome, ("warning", "The last check didn't finish cleanly"))
+            facts.setFact("check", state, friendly_timestamp(when), description)
+        else:
+            facts.setFact("check", "never", "", "Stored data is readable and consistent")
+
+        record = recovery_test.load()
+        state, when, advice = recovery_test.status(record, dest.get("repo"))
+        facts.setFact("recovery", state, friendly_timestamp(when) if when else "", advice)
+        if state != "never":
+            self.lbl_restore_test.setText(f"{record.get('result')} ({friendly_timestamp(when)})")
+            theming.role(self.lbl_restore_test, "error" if state == "error" else "")
+
+    def test_recovery(self):
+        """Prove a file comes back using only the typed passphrase (recovery_test.py)."""
+        if self._repo_op_running:
+            QMessageBox.information(self, "Keep", "Wait for the current backup or delete to finish, then test recovery.")
+            return
+        dest = refresh_destination()
+        if not dest["available"] or not dest.get("repo"):
+            QMessageBox.information(self, "Keep", f"Connect {dest.get('label') or 'your backup destination'} first, then test recovery.")
+            return
+        if not self._unmount():
+            QMessageBox.warning(self, "Keep", "Close the archive you're browsing, then test recovery.")
+            return
+        dialog = RecoveryTestDialog(dest["repo"], self)
+        dialog.recorded.connect(lambda _record: self.refresh_status())
+        dialog.exec()
+
     def refresh_status(self, select_latest_archive=False):
         self._refresh_setup_labels()
         self._refresh_activity()
@@ -3128,7 +3203,7 @@ class MainWindow(QWidget):
                 theming.role(label, "error" if outcome in ("failed", "cancelled", "warning") else "")
         except (OSError, ValueError, TypeError):
             pass
-
+        self._refresh_facts(dest)
 
         if not dest["available"]:
             self.lbl_repo.setText("unavailable")

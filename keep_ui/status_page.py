@@ -1,11 +1,14 @@
 """Status surfaces and disclosures, independent of backup execution."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QScrollArea, QFrame, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QProgressBar, QPlainTextEdit, QPushButton, QApplication
 from .common import DisclosureSection
 import consumer
+import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
+from odcs_ui.widgets import StatusFacts
 
 class StatusPage(QScrollArea):
-    CONTROL_NAMES = ('activity_rows', 'backup_explanation', 'backup_progress', 'copy_summary_button', 'details_section', 'history_section', 'lbl_check', 'lbl_dest', 'lbl_dest_reason', 'lbl_dest_status', 'lbl_headline', 'lbl_last', 'lbl_last_attempt', 'lbl_next', 'lbl_progress_detail', 'lbl_repo', 'lbl_restore_test', 'lbl_verify', 'left_panel', 'log_section', 'log_view', 'summary_surface')
+    recoveryTestRequested = Signal()
+    CONTROL_NAMES = ('activity_rows', 'backup_explanation', 'backup_progress', 'btn_test_recovery', 'copy_summary_button', 'details_section', 'facts_surface', 'history_section', 'lbl_check', 'lbl_dest', 'lbl_dest_reason', 'lbl_dest_status', 'lbl_headline', 'lbl_last', 'lbl_last_attempt', 'lbl_next', 'lbl_progress_detail', 'lbl_repo', 'lbl_restore_test', 'lbl_verify', 'left_panel', 'log_section', 'log_view', 'status_facts', 'summary_surface')
 
     def __init__(self):
         super().__init__()
@@ -54,6 +57,22 @@ class StatusPage(QScrollArea):
             summary.addWidget(label)
         self.lbl_dest_reason.hide()
         content.addWidget(self.summary_surface)
+        # Three separate facts, each with its own result and date: a finished
+        # backup, a readable repository and a proven restore are different
+        # promises, and only the last one says you can get your files back.
+        self.facts_surface = QWidget()
+        self.facts_surface.setObjectName("factsSurface")
+        self.facts_surface.setAttribute(Qt.WA_StyledBackground, True)
+        facts = QVBoxLayout(self.facts_surface)
+        facts.setContentsMargins(24, 16, 24, 12)
+        self.status_facts = StatusFacts("Can you get your files back?")
+        self.status_facts.addFact("backup", "Backup completed", "Your selected files were saved")
+        self.status_facts.addFact("check", "Integrity checked", "Stored data is readable and consistent")
+        self.status_facts.addFact("recovery", "Recovery tested", "Restore one file using only your passphrase",
+                                  action=("Test recovery…", self.recoveryTestRequested.emit))
+        self.btn_test_recovery = self.status_facts.facts["recovery"]["action"]
+        facts.addWidget(self.status_facts)
+        content.addWidget(self.facts_surface)
         self.backup_progress = QProgressBar()
         self.backup_progress.setRange(0, 0)
         self.backup_progress.setTextVisible(False)

@@ -2,7 +2,7 @@
    Geometry is shared across themes; colors are resolved by theming.py. */
 QWidget { background: transparent; color: $TEXT_PRIMARY; }
 QWidget#keepWindow, QDialog { background: $BG_WINDOW; }
-QWidget#summarySurface, QWidget#historySurface, QWidget#restoreSurface {
+QWidget#summarySurface, QWidget#factsSurface, QWidget#historySurface, QWidget#restoreSurface {
     background: $BG_PANEL; border: 1px solid $BORDER_OUTER; border-radius: 8px;
 }
 QLabel { background: transparent; border: none; }
@@ -11,6 +11,8 @@ QWidget#keepToolbar { background: $BG_WINDOW; border-bottom: 1px solid $BORDER_O
 QLabel#keepAppTitle { font-weight: 600; }
 QWidget#keepSidebar { background: $BG_WINDOW; border-right: 1px solid $BORDER_OUTER; }
 QStackedWidget#keepContent { background: $BG_PANEL; }
+/* Inside a card the facts heading matches the other card titles. */
+QWidget#factsSurface QLabel#odcsGroupHeading { color: $TEXT_PRIMARY; padding: 0; }
 QLabel[role="secondary"] { color: $TEXT_SECONDARY; }
 QLabel[role="error"] { color: $ERROR; }
 QGroupBox { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; padding-top: 20px; }

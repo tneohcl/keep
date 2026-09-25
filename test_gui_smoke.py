@@ -196,6 +196,18 @@ with tempfile.TemporaryDirectory() as directory:
     assert window.btn_restore.property("role") == "primary" and window.btn_backup.property("role") != "primary"
     window.view_switch.setCurrentIndex(0)
     assert window.btn_backup.property("role") == "primary"
+    # Three separate facts; an untested recovery says so and offers the test.
+    assert list(window.status_facts.facts) == ["backup", "check", "recovery"]
+    assert window.status_facts.whenText("recovery") == window.status_facts.NEVER
+    assert window.btn_test_recovery.text() == "Test recovery…"
+    assert window.action_test_recovery.text() == "Test recovery…"
+    from keep_ui.recovery_test_dialog import RecoveryTestDialog
+    dialog = RecoveryTestDialog("/nonexistent/repo", window)
+    assert dialog.passphrase.echoMode() == main.QLineEdit.Password
+    assert not dialog.start_button.isEnabled()
+    dialog.passphrase.setText("typed")
+    assert dialog.start_button.isEnabled() and dialog.start_button.property("role") == "primary"
+    dialog.deleteLater()
     picker = window.apps_picker
     picker._installed_apps_provider = lambda: SimpleNamespace(contains=lambda *ids: "Firefox" in ids)
     picker.populate([main.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications")])
