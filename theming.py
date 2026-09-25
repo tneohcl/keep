@@ -11,8 +11,21 @@ def luminance(color):
     return sum(a * b for a, b in zip(values, (.2126, .7152, .0722)))
 
 
-def tokens(palette):
-    dark = luminance(palette.color(QPalette.Window)) < .5
+# Same choices and labels as VeloCoder's theme setting (ODCS apps share one
+# vocabulary). "system" follows the desktop palette live, as before.
+THEME_CHOICES = [("dark", "Dark"), ("light", "Light"), ("system", "Match System")]
+
+
+def resolve_dark(palette, choice="system"):
+    if choice == "dark":
+        return True
+    if choice == "light":
+        return False
+    return luminance(palette.color(QPalette.Window)) < .5
+
+
+def tokens(palette, choice="system"):
+    dark = resolve_dark(palette, choice)
     values = dict(themes.DARK if dark else themes.LIGHT)
     accent = palette.color(getattr(QPalette, "Accent", QPalette.Highlight))
     if not accent.isValid():
@@ -29,8 +42,8 @@ def tokens(palette):
     return values
 
 
-def stylesheet(palette):
-    return Template(Path(__file__).with_name("style.qss").read_text(encoding="utf-8")).substitute(tokens(palette))
+def stylesheet(palette, choice="system"):
+    return Template(Path(__file__).with_name("style.qss").read_text(encoding="utf-8")).substitute(tokens(palette, choice))
 
 
 class ThemeController(QObject):
@@ -39,14 +52,19 @@ class ThemeController(QObject):
         self.app = app
         self.busy = False
         self.current = None
+        self.choice = "system"
         app.installEventFilter(self)
+
+    def set_choice(self, choice):
+        self.choice = choice if choice in dict(THEME_CHOICES) else "system"
+        self.apply()
 
     def apply(self):
         if self.busy:
             return
         self.busy = True
         try:
-            qss = stylesheet(self.app.palette())
+            qss = stylesheet(self.app.palette(), self.choice)
             if qss != self.current:
                 self.current = qss
                 self.app.setStyleSheet(qss)
@@ -59,10 +77,13 @@ class ThemeController(QObject):
         return False
 
 
-def install(app):
+def install(app, choice=None):
     if not hasattr(app, "_keep_theme"):
         app._keep_theme = ThemeController(app)
-    app._keep_theme.apply()
+    if choice is not None:
+        app._keep_theme.set_choice(choice)
+    else:
+        app._keep_theme.apply()
 
 
 def role(widget, value):

@@ -30,8 +30,8 @@ from collections import namedtuple
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, QDir, QSize, QTimer, QRect, QEvent, QTime
-from PySide6.QtGui import QAction, QIcon, QColor, QPalette, QFont, QFontMetrics, QKeySequence
+from PySide6.QtCore import Qt, QThread, Signal, QDir, QSize, QTimer, QRect, QEvent, QTime, QLocale
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QColor, QPalette, QFont, QFontMetrics, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QPlainTextEdit, QFileSystemModel, QTreeView, QLayout,
@@ -559,6 +559,23 @@ def run_borg_json_checked(args):
     return borg_ops.query_json(args, borg_env(), runner=subprocess.run)
 
 
+def friendly_clock(hour, minute):
+    """A clock time in the desktop's own format (QLocale), e.g. "4:00 AM" on
+    en_US or "04:00" on a 24-hour locale. Every time Keep shows goes through
+    here, so the schedule button and the status panel can't disagree again
+    (they showed "04:00" and "4:00 AM" side by side before 2026-09-25)."""
+    return QLocale.system().toString(QTime(hour, minute), QLocale.FormatType.ShortFormat)
+
+
+def schedule_summary(schedule):
+    """"Daily at 4:00 AM" / "Weekly on Monday at 4:00 AM" for the schedule button."""
+    parsed = QTime.fromString(str(schedule.get("time") or "04:00"), "HH:mm")
+    clock = friendly_clock(parsed.hour(), parsed.minute()) if parsed.isValid() else str(schedule.get("time"))
+    if schedule.get("frequency") == "weekly":
+        return f"Weekly on {schedule.get('weekday') or 'Monday'} at {clock}"
+    return f"Daily at {clock}"
+
+
 def friendly_datetime(dt):
     """Human-readable, not '2026-09-14T22:24:15+08:00' - a real user report
     ("shouldn't be too technical... looks like military time"). Today/
@@ -570,7 +587,7 @@ def friendly_datetime(dt):
     now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
     today = now.date()
     d = dt.date()
-    time_str = dt.strftime("%I:%M %p").lstrip("0")
+    time_str = friendly_clock(dt.hour, dt.minute)
     if d == today:
         return f"Today at {time_str}"
     if d == today - timedelta(days=1):
@@ -2707,6 +2724,19 @@ class MainWindow(QWidget):
         self.action_show_log = view_menu.addAction("Show &log")
         self.action_show_log.setCheckable(True)
         self.action_show_log.setShortcut(QKeySequence("Ctrl+L"))
+        view_menu.addSeparator()
+        # Manual override of the desktop theme, same three choices and labels
+        # as VeloCoder (2026-09-25). Saved in config.json as "theme".
+        theme_menu = view_menu.addMenu("&Theme")
+        self.theme_actions = QActionGroup(self)
+        self.theme_actions.setExclusive(True)
+        for value, label in theming.THEME_CHOICES:
+            action = theme_menu.addAction(label)
+            action.setCheckable(True)
+            action.setData(value)
+            action.setChecked(CONFIG.get("theme", "system") == value)
+            self.theme_actions.addAction(action)
+        self.theme_actions.triggered.connect(self._on_theme_chosen)
         help_menu = self.menu_bar.addMenu("Help")
         help_menu.addAction("Keep help", self._show_help).setShortcut(QKeySequence("F1"))
         help_menu.addAction("About Keep", self._show_about)
@@ -2744,8 +2774,13 @@ class MainWindow(QWidget):
         self._refresh_activity()
         self.resize(1100, 720)
 
+    def _on_theme_chosen(self, action):
+        CONFIG["theme"] = action.data()
+        save_config()
+        self._apply_theme_dependent_styling()
+
     def _apply_theme_dependent_styling(self):
-        theming.install(QApplication.instance())
+        theming.install(QApplication.instance(), CONFIG.get("theme", "system"))
         theming.role(self.btn_backup, "primary")
         theming.role(self.lbl_progress_detail, "secondary")
         theming.role(self.lbl_delete_status, "secondary")
@@ -2942,7 +2977,7 @@ class MainWindow(QWidget):
                 settings_summary = f"{len(selection & system_ids)} selected"
             self.settings_choice.setText(settings_summary + "…")
             schedule = CONFIG.get("schedule", {})
-            self.schedule_button.setText((f"{schedule.get('frequency', 'daily').title()} at {schedule.get('time', '04:00')}" if schedule.get("enabled") else "Automatic backups off") + "…")
+            self.schedule_button.setText((schedule_summary(schedule) if schedule.get("enabled") else "Automatic backups off") + "…")
 
     def configure_applications(self, category="applications"):
         if self._repo_op_running:

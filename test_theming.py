@@ -11,6 +11,28 @@ class ThemeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_text_tokens_meet_wcag_aa(self):
+        # 2026-09-25 UI audit: every readable TEXT_* token >= 4.5:1 on the
+        # surfaces text actually sits on (TEXT_DISABLED is WCAG-exempt).
+        import themes
+        def ratio(a, b):
+            la, lb = theming.luminance(QColor(a)), theming.luminance(QColor(b))
+            return (max(la, lb) + .05) / (min(la, lb) + .05)
+        for name, theme in themes.THEMES.items():
+            for fg in ("TEXT_PRIMARY", "TEXT_SECONDARY", "TEXT_TERTIARY", "TEXT_READONLY", "TEXT_CAPTION"):
+                for bg in ("BG_WINDOW", "BG_PANEL", "BG_FIELD"):
+                    with self.subTest(theme=name, fg=fg, bg=bg):
+                        self.assertGreaterEqual(ratio(theme[fg], theme[bg]), 4.5)
+
+    def test_manual_theme_choice_overrides_desktop(self):
+        light_desktop = QPalette(self.app.palette())
+        light_desktop.setColor(QPalette.Window, QColor("#eeeeee"))
+        self.assertTrue(theming.resolve_dark(light_desktop, "dark"))
+        self.assertFalse(theming.resolve_dark(light_desktop, "light"))
+        self.assertFalse(theming.resolve_dark(light_desktop, "system"))
+        self.assertFalse(theming.resolve_dark(light_desktop, "nonsense"))
+        self.assertNotEqual(theming.stylesheet(light_desktop, "dark"), theming.stylesheet(light_desktop, "light"))
+
     def test_theme_round_trip(self):
         original = self.app.palette()
         results = []
