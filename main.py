@@ -25,7 +25,8 @@ import signal
 import subprocess
 import sys
 import time
-import theming
+import theming  # also puts the bundled vendor/odcs_ui on sys.path
+from odcs_ui import timefmt as odcs_timefmt
 from collections import namedtuple
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -563,8 +564,9 @@ def friendly_clock(hour, minute):
     """A clock time in the desktop's own format (QLocale), e.g. "4:00 AM" on
     en_US or "04:00" on a 24-hour locale. Every time Keep shows goes through
     here, so the schedule button and the status panel can't disagree again
-    (they showed "04:00" and "4:00 AM" side by side before 2026-09-25)."""
-    return QLocale.system().toString(QTime(hour, minute), QLocale.FormatType.ShortFormat)
+    (they showed "04:00" and "4:00 AM" side by side before 2026-09-25).
+    Delegates to the shared ODCS helper so every ODCS app formats alike."""
+    return odcs_timefmt.friendly_clock(hour, minute)
 
 
 def schedule_summary(schedule):

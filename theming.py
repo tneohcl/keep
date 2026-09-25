@@ -1,19 +1,32 @@
-"""Shared QSS loading and live system-palette integration for Keep."""
+"""Keep's theming: a thin adapter over the bundled odcs-ui (vendor/odcs_ui).
+
+odcs-ui owns the tokens, the desktop-accent logic, $TOKEN rendering and the
+shared base stylesheet; this module keeps the small API the rest of Keep and
+its tests already use (install, role, tokens, stylesheet, resolve_dark, ...).
+Stylesheets load in order: odcs-ui base.qss, then Keep's style.qss on top.
+"""
+import sys
 from pathlib import Path
-from string import Template
-from PySide6.QtCore import QObject, QEvent
-from PySide6.QtGui import QColor, QPalette
-import themes
+
+_VENDOR = Path(__file__).with_name("vendor")
+if _VENDOR.is_dir() and str(_VENDOR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR))
+
+from PySide6.QtCore import QObject, QEvent  # noqa: E402
+from PySide6.QtGui import QPalette  # noqa: E402
+
+from odcs_ui import color as odcs_color  # noqa: E402
+from odcs_ui import theming as odcs_theming  # noqa: E402
+
+KEEP_QSS = Path(__file__).with_name("style.qss")
+
+# Same choices and labels in every ODCS app (odcs_ui.theming.THEME_CHOICES).
+THEME_CHOICES = odcs_theming.THEME_CHOICES
 
 
 def luminance(color):
-    values = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in (color.redF(), color.greenF(), color.blueF())]
-    return sum(a * b for a, b in zip(values, (.2126, .7152, .0722)))
-
-
-# Same choices and labels as VeloCoder's theme setting (ODCS apps share one
-# vocabulary). "system" follows the desktop palette live, as before.
-THEME_CHOICES = [("dark", "Dark"), ("light", "Light"), ("system", "Match System")]
+    """WCAG relative luminance of a QColor."""
+    return odcs_color.luminance(color.name())
 
 
 def resolve_dark(palette, choice="system"):
@@ -25,25 +38,17 @@ def resolve_dark(palette, choice="system"):
 
 
 def tokens(palette, choice="system"):
-    dark = resolve_dark(palette, choice)
-    values = dict(themes.DARK if dark else themes.LIGHT)
-    accent = palette.color(getattr(QPalette, "Accent", QPalette.Highlight))
-    if not accent.isValid():
-        accent = QColor(values["ACCENT"])
-    lightness = luminance(accent)
-    white_contrast = 1.05 / (lightness + .05)
-    black_contrast = (lightness + .05) / .05
-    values["CHEVRON_PATH"] = Path(__file__).with_name("chevron-down.svg").as_posix()
-    values["CHECK_PATH"] = Path(__file__).with_name("check.svg").as_posix()
-    values.update(ACCENT=accent.name(), ACCENT_HOVER=accent.lighter(118).name(),
-                  ACCENT_PRESSED=accent.darker(115).name(),
-                  TEXT_ON_ACCENT="#ffffff" if white_contrast >= black_contrast else "#000000",
-                  ERROR="#ff9a8e" if dark else "#b42318")
-    return values
+    """odcs-ui tokens for the resolved theme and desktop accent, plus Keep's icon paths."""
+    name = "dark" if resolve_dark(palette, choice) else "light"
+    return odcs_theming.build_tokens(name, palette, {
+        "CHEVRON_PATH": Path(__file__).with_name("chevron-down.svg").as_posix(),
+        "CHECK_PATH": Path(__file__).with_name("check.svg").as_posix(),
+    })
 
 
 def stylesheet(palette, choice="system"):
-    return Template(Path(__file__).with_name("style.qss").read_text(encoding="utf-8")).substitute(tokens(palette, choice))
+    qss = odcs_theming.BASE_QSS.read_text(encoding="utf-8") + "\n" + KEEP_QSS.read_text(encoding="utf-8")
+    return odcs_theming.render(qss, tokens(palette, choice))
 
 
 class ThemeController(QObject):
@@ -64,6 +69,10 @@ class ThemeController(QObject):
             return
         self.busy = True
         try:
+            values = tokens(self.app.palette(), self.choice)
+            # odcs widgets that paint their own colours (status icons) read these.
+            odcs_theming._CURRENT.clear()
+            odcs_theming._CURRENT.update(values)
             qss = stylesheet(self.app.palette(), self.choice)
             if qss != self.current:
                 self.current = qss
@@ -87,7 +96,4 @@ def install(app, choice=None):
 
 
 def role(widget, value):
-    if widget.property("role") != value:
-        widget.setProperty("role", value)
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
+    odcs_theming.set_role(widget, value)
