@@ -244,16 +244,23 @@ with tempfile.TemporaryDirectory() as directory:
         picker.search.setText("fire")
         assert [section.item(i).isHidden() for i in range(section.count())] == [False, True]
         picker.search.setText("")
-        from PySide6.QtTest import QTest
-        from PySide6.QtCore import QPoint
+        from PySide6.QtCore import QPoint, QPointF, QEvent
+        from PySide6.QtGui import QMouseEvent
+
+        def click(widget, pos):  # QtTest isn't in Debian's PySide6 packages
+            for kind in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease):
+                event = QMouseEvent(kind, QPointF(pos), QPointF(widget.mapToGlobal(pos)),
+                                    main.Qt.LeftButton, main.Qt.LeftButton if kind == QEvent.MouseButtonPress else main.Qt.NoButton,
+                                    main.Qt.NoModifier)
+                QApplication.sendEvent(widget, event)
         window.resize(1200, 800)
         window.show()
         window.view_switch.setCurrentIndex(1)
         app.processEvents()
         rect = section.visualItemRect(section.item(0))
-        QTest.mouseClick(section.viewport(), main.Qt.LeftButton, pos=rect.center())
+        click(section.viewport(), rect.center())
         assert section.item(0).checkState() == main.Qt.Checked
-        QTest.mouseClick(section.viewport(), main.Qt.LeftButton, pos=rect.topLeft() + QPoint(18, rect.height() // 2))
+        click(section.viewport(), rect.topLeft() + QPoint(18, rect.height() // 2))
         assert section.item(0).checkState() == main.Qt.Unchecked  # the drawn checkbox: exactly one toggle
         window.view_switch.setCurrentIndex(0)
         window.hide()
