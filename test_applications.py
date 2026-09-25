@@ -58,6 +58,25 @@ class AppSelectionTests(unittest.TestCase):
         self.assertEqual(set(sources), {str(self.home / ".mozilla"), str(self.home / ".var/app/org.mozilla.firefox")})
         self.assertNotIn(str(self.home / ".config/kritarc"), sources)
 
+    def test_app_data_appearing_after_the_choice_is_flagged_for_review(self):
+        # "selected" mode backs up only what was chosen; a folder created
+        # later (e.g. a new app's config) must not be skipped silently.
+        catalog = applications.catalog(self.config, self.home, include_unrecognized=True)
+        ids = [entry["id"] for entry in catalog]
+        self.config.update(app_selection_mode="selected", selected_applications=["firefox"], known_applications=ids)
+        self.assertEqual(applications.unreviewed(self.config, catalog), [])
+        (self.home / ".config/NewApp").mkdir()
+        catalog = applications.catalog(self.config, self.home, include_unrecognized=True)
+        self.assertEqual([entry["id"] for entry in applications.unreviewed(self.config, catalog)], ["path:.config/NewApp"])
+        self.config["app_selection_mode"] = "all"  # everything is backed up anyway
+        self.assertEqual(applications.unreviewed(self.config, catalog), [])
+
+    def test_without_a_record_every_unselected_entry_is_reviewed_once(self):
+        catalog = applications.catalog(self.config, self.home, include_unrecognized=True)
+        self.config.update(app_selection_mode="selected", selected_applications=["firefox"])
+        pending = {entry["id"] for entry in applications.unreviewed(self.config, catalog)}
+        self.assertEqual(pending, {entry["id"] for entry in catalog} - {"firefox"})
+
     def test_legacy_keeps_all_coverage(self):
         self.assertIn(str(self.home / ".config"), consumer.app_data_sources(self.config, str(self.home)))
 

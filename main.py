@@ -3019,6 +3019,13 @@ class MainWindow(QWidget):
         self.destination_choice.setValue(label)  # wraps; never elided (DESIGN.md, Resilience)
         self.destination_choice.setToolTip(label)
         if hasattr(self, "apps_choice"):
+            import applications
+            try:
+                pending = applications.unreviewed(CONFIG, applications.catalog(CONFIG, include_unrecognized=True))
+            except OSError:
+                pending = []
+            new_apps = [entry["label"] for entry in pending if entry["category"] == "applications"]
+            new_settings = [entry["label"] for entry in pending if entry["category"] != "applications"]
             if not CONFIG.get("include_app_data", True):
                 summary = "None selected"
             elif CONFIG.get("app_selection_mode", "all") == "selected":
@@ -3027,16 +3034,27 @@ class MainWindow(QWidget):
                 summary = f"{len(selection - system_ids)} selected"
             else:
                 summary = "All application data"
-            self.apps_choice.setValue(summary)
+            self._set_choice_with_review(self.apps_choice, summary, new_apps)
             if not CONFIG.get("include_app_data", True):
                 settings_summary = "None selected"
             elif CONFIG.get("app_selection_mode", "all") == "all":
                 settings_summary = "All curated settings"
             else:
                 settings_summary = f"{len(selection & system_ids)} selected"
-            self.settings_choice.setValue(settings_summary)
+            self._set_choice_with_review(self.settings_choice, settings_summary, new_settings)
             schedule = CONFIG.get("schedule", {})
             self.schedule_button.setValue(schedule_summary(schedule) if schedule.get("enabled") else "Off")
+
+    @staticmethod
+    def _set_choice_with_review(row, summary, unreviewed_labels):
+        """App data that appeared after the last choice isn't backed up in
+        "selected" mode; say so on the row instead of skipping it silently."""
+        if unreviewed_labels:
+            row.setValue(f"{summary} · {len(unreviewed_labels)} to review", "warning")
+            row.setToolTip("Not backed up yet, and not reviewed: " + ", ".join(sorted(unreviewed_labels)))
+        else:
+            row.setValue(summary)
+            row.setToolTip("")
 
     def configure_applications(self, category="applications"):
         if self._repo_op_running:
@@ -3057,6 +3075,11 @@ class MainWindow(QWidget):
             previous.update(entry["id"] for entry in entries)
         other = [entry["id"] for entry in entries if entry["category"] != category and entry["id"] in previous]
         candidate["selected_applications"] = dialog.selection() + other
+        # Everything the person just saw in this category now counts as
+        # decided; app data that appears later is flagged "to review".
+        candidate["known_applications"] = sorted(
+            set(CONFIG.get("known_applications", []))
+            | {entry["id"] for entry in entries if entry["category"] == category})
         conflict = applications.selection_conflict(candidate, [e["path"] for e in _consumer_module.backup_source_entries(candidate)])
         if conflict:
             QMessageBox.warning(self, "Overlapping backup folders", f"The folder {conflict} includes application data directly. Remove that broad folder in Choose Folders before choosing individual apps. Your selection was not changed.")

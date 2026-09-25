@@ -82,6 +82,17 @@ def selected_paths(config, home=None):
     return [str(home / p) for entry in catalog(config, home, include_unrecognized=True) if entry["id"] in selected for p in entry["paths"]]
 
 
+def unreviewed(config, entries):
+    """App data the person hasn't decided about: not selected, and not on
+    screen the last time they chose apps (known_applications). Only
+    meaningful when choosing individual apps; "all" already includes it.
+    Without a record yet (older configs) every unselected entry counts once."""
+    if not config.get("include_app_data", True) or config.get("app_selection_mode", "all") != "selected":
+        return []
+    reviewed = set(config.get("known_applications", [])) | set(config.get("selected_applications", []))
+    return [entry for entry in entries if entry["id"] not in reviewed]
+
+
 def selection_conflict(config, sources, home=None):
     """Reject broad folder sources that would bypass explicit app selection."""
     if not config.get("include_app_data", True) or config.get("app_selection_mode", "all") != "selected":
