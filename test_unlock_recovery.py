@@ -2828,7 +2828,7 @@ qq_help_text = " ".join(lbl.text() for lbl in qq_help.findChildren(main.QLabel) 
 check("Phase QQ: HelpDialog no longer says the old 'Restore Picked (safe...)' label",
       "Restore Picked" not in qq_help_text, qq_help_text[:200])
 check("Phase QQ: HelpDialog references the actual current button labels instead",
-      "Restore safely" in qq_help_text and "Restore directly" in qq_help_text)
+      "Review restore" in qq_help_text and "Restore to original location" in qq_help_text, qq_help_text[:400])
 check("Phase QQ: HelpDialog's 'Around the app' section mentions the current Details/Activity structure, not just the old flat list",
       "Details" in qq_help_text)
 qq_help.close()
