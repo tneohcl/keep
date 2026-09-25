@@ -189,7 +189,13 @@ with tempfile.TemporaryDirectory() as directory:
         with patch.object(main.subprocess, "run", side_effect=failure):
             ok, message = window._attempt_mount("fixture")
             assert not ok and message
-    assert isinstance(window.pages, main.QTabWidget)
+    assert isinstance(window.pages, main.QStackedWidget)
+    assert window.pages.count() == 2 and window.view_switch.currentIndex() == 0
+    window.view_switch.setCurrentIndex(1)
+    assert window.pages.currentIndex() == 1
+    assert window.btn_restore.property("role") == "primary" and window.btn_backup.property("role") != "primary"
+    window.view_switch.setCurrentIndex(0)
+    assert window.btn_backup.property("role") == "primary"
     picker = window.apps_picker
     picker._installed_apps_provider = lambda: SimpleNamespace(contains=lambda *ids: "Firefox" in ids)
     picker.populate([main.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications")])

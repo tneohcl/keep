@@ -1,46 +1,45 @@
-"""Persistent backup controls; no filesystem or repository operations."""
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QSizePolicy
+"""Sidebar of backup settings plus the backup/stop actions; no filesystem or
+repository operations.
+
+ODCS layout: the sidebar is one grouped odcs SettingsList (each row a real
+button whose value wraps), sitting on the window colour. btn_backup and
+btn_stop are created here for the controller but placed by MainWindow at the
+trailing end of the toolbar.
+"""
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy
+
+import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
+from odcs_ui.theming import set_surface
+from odcs_ui.widgets import SettingsList
+
 
 class BackupPanel(QWidget):
     CONTROL_NAMES = ('apps_choice', 'btn_backup', 'btn_stop', 'destination_choice', 'plan_panel', 'schedule_button', 'settings_choice', 'source_choice')
 
     def __init__(self, controller):
         super().__init__()
-        self.setFixedWidth(290)
+        self.setObjectName("keepSidebar")
+        set_surface(self, "window")
+        self.setFixedWidth(300)
         shell = QVBoxLayout(self)
-        shell.setContentsMargins(0, 0, 0, 0)
-        shell.setSpacing(12)
-        title = QLabel("Your backup")
-        font = title.font()
-        font.setPointSize(font.pointSize() + 5)
-        font.setBold(True)
-        title.setFont(font)
-        title.setContentsMargins(0, 8, 0, 0)
-        shell.addWidget(title)
-        self.plan_panel = QWidget()
-        self.plan_panel.setObjectName("planPanel")
-        self.plan_panel.setAttribute(Qt.WA_StyledBackground, True)
-        plan = QVBoxLayout(self.plan_panel)
-        plan.setContentsMargins(20, 24, 20, 20)
-        plan.setSpacing(12)
+        shell.setContentsMargins(16, 20, 16, 20)
+        shell.setSpacing(16)
+        self.plan_panel = SettingsList("What's backed up")
         controls = (
-            ("Folders", "source_choice", "Choose folders…", controller.configure_backup_sources),
-            ("Applications", "apps_choice", "Choose applications…", controller.configure_applications),
-            ("System settings", "settings_choice", "Choose settings…", lambda: controller.configure_applications("system")),
-            ("Destination", "destination_choice", "Choose backup location…", controller.change_backup_destination),
-            ("Automatic backups", "schedule_button", "Schedule…", controller.configure_schedule),
+            ("Folders", "source_choice", controller.configure_backup_sources),
+            ("Applications", "apps_choice", controller.configure_applications),
+            ("System settings", "settings_choice", lambda: controller.configure_applications("system")),
+            ("Destination", "destination_choice", controller.change_backup_destination),
+            ("Schedule", "schedule_button", controller.configure_schedule),
         )
-        for caption, name, text, callback in controls:
-            button = QPushButton(text)
-            button.clicked.connect(lambda checked=False, callback=callback: callback())
-            button.setMinimumHeight(36)
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            setattr(self, name, button)
-            plan.addWidget(QLabel(caption))
-            plan.addWidget(button)
-            plan.addSpacing(10)
-        plan.addStretch()
+        for label, name, callback in controls:
+            row = self.plan_panel.addRow(label, "", lambda checked=False, callback=callback: callback())
+            setattr(self, name, row)
+        shell.addWidget(self.plan_panel)
+        self.recovery_slot = QVBoxLayout()  # Recovery group (phase D) goes here
+        shell.addLayout(self.recovery_slot)
+        shell.addStretch(1)
+
         self.btn_backup = QPushButton("Back up now")
         self.btn_backup.clicked.connect(controller.start_backup)
         self.btn_stop = QPushButton("Stop")
@@ -48,7 +47,4 @@ class BackupPanel(QWidget):
         self.btn_stop.setEnabled(False)
         self.btn_stop.hide()
         for button in (self.btn_backup, self.btn_stop):
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            button.setMinimumSize(180, 40)
-            plan.addWidget(button)
-        shell.addWidget(self.plan_panel, 1)
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)

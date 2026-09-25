@@ -27,6 +27,7 @@ import sys
 import time
 import theming  # also puts the bundled vendor/odcs_ui on sys.path
 from odcs_ui import timefmt as odcs_timefmt
+from odcs_ui.widgets import ViewSwitch
 from collections import namedtuple
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -38,7 +39,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QFormLayout, QPlainTextEdit, QFileSystemModel, QTreeView, QLayout,
     QComboBox, QFileDialog, QMessageBox, QAbstractItemView, QProgressDialog,
     QTabWidget, QListWidget, QListWidgetItem, QSplitter, QProgressBar,
-    QSizePolicy, QDialog, QLineEdit, QScrollArea, QFrame,
+    QSizePolicy, QDialog, QLineEdit, QScrollArea, QFrame, QStackedWidget,
     QStyledItemDelegate, QStyle, QInputDialog, QCheckBox, QMenuBar,
     QButtonGroup, QTimeEdit, QStyleOptionFocusRect, QStackedWidget, QMenu,
 )
@@ -2705,6 +2706,8 @@ class MainWindow(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
         self.menu_bar = QMenuBar(self)
         backup_menu = self.menu_bar.addMenu("Backup")
         self.action_back_up_now = backup_menu.addAction("Back up now", self.start_backup)
@@ -2753,11 +2756,32 @@ class MainWindow(QWidget):
             for name in view.CONTROL_NAMES:
                 setattr(self, name, getattr(view, name))
         self.restore_surface = self.restore_page
-        self.pages = QTabWidget()
-        self.pages.setObjectName("workspaceTabs")
-        self.pages.tabBar().setDrawBase(False)
-        self.pages.addTab(self.status_page, "Status")
-        self.pages.addTab(self.restore_page, "Restore")
+        # ODCS window model: toolbar (view switch, primary action trailing)
+        # over a sidebar + content split. A stacked widget replaces the old
+        # tab widget; the ViewSwitch in the toolbar drives it.
+        self.pages = QStackedWidget()
+        self.pages.setObjectName("keepContent")
+        self.pages.addWidget(self.status_page)
+        self.pages.addWidget(self.restore_page)
+        self.view_switch = ViewSwitch(["Status", "Restore"], accessible_name="Keep view")
+        self.view_switch.currentChanged.connect(self.pages.setCurrentIndex)
+        self.pages.currentChanged.connect(self.view_switch.setCurrentIndex)
+        self.pages.currentChanged.connect(self._update_primary_action)
+        toolbar = QWidget()
+        toolbar.setObjectName("keepToolbar")
+        toolbar.setAttribute(Qt.WA_StyledBackground, True)
+        bar = QHBoxLayout(toolbar)
+        bar.setContentsMargins(16, 8, 16, 8)
+        bar.setSpacing(8)
+        app_title = QLabel("Keep")
+        app_title.setObjectName("keepAppTitle")
+        app_title.setFixedWidth(284)
+        bar.addWidget(app_title)
+        bar.addWidget(self.view_switch)
+        bar.addStretch(1)
+        for widget in (self.btn_stop, self.btn_backup):
+            bar.addWidget(widget)
+        root.addWidget(toolbar)
         for index in (0, 1):
             action = QAction(self)
             action.setShortcut(QKeySequence(f"Ctrl+{index + 1}"))
@@ -2768,7 +2792,8 @@ class MainWindow(QWidget):
         self.log_section.toggle.toggled.connect(self.action_show_log.setChecked)
         self.pages.currentChanged.connect(self._on_workspace_changed)
         body = QHBoxLayout()
-        body.setSpacing(24)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
         body.addWidget(self.backup_panel)
         body.addWidget(self.pages, 1)
         root.addLayout(body, 1)
@@ -2781,9 +2806,17 @@ class MainWindow(QWidget):
         save_config()
         self._apply_theme_dependent_styling()
 
+    def _update_primary_action(self, index=None):
+        """The strongest accent marks the current view's task: Back up now on
+        Status, Restore selected to... on Restore (DESIGN.md principle 4)."""
+        index = self.pages.currentIndex() if index is None else index
+        theming.role(self.btn_backup, "primary" if index == 0 else "")
+        if hasattr(self, "btn_restore"):
+            theming.role(self.btn_restore, "primary" if index == 1 else "")
+
     def _apply_theme_dependent_styling(self):
         theming.install(QApplication.instance(), CONFIG.get("theme", "system"))
-        theming.role(self.btn_backup, "primary")
+        self._update_primary_action()
         theming.role(self.lbl_progress_detail, "secondary")
         theming.role(self.lbl_delete_status, "secondary")
 
@@ -2955,11 +2988,11 @@ class MainWindow(QWidget):
         sources = _consumer_module.backup_source_entries(CONFIG)
         labels = [entry["label"] for entry in sources]
         description = (f"{len(labels)} folder" + ("s" if len(labels) != 1 else "")) if labels else "No folders selected"
-        self.source_choice.setText(description + "…")
+        self.source_choice.setValue(description)
         self.source_choice.setToolTip("\n".join(labels))
         destination = CONFIG.get("destination", {})
         label = destination.get("label") or "Choose backup location"
-        self.destination_choice.setText(self.destination_choice.fontMetrics().elidedText(label, Qt.ElideRight, 215) + "…")
+        self.destination_choice.setValue(label)  # wraps; never elided (DESIGN.md, Resilience)
         self.destination_choice.setToolTip(label)
         if hasattr(self, "apps_choice"):
             if not CONFIG.get("include_app_data", True):
@@ -2970,16 +3003,16 @@ class MainWindow(QWidget):
                 summary = f"{len(selection - system_ids)} selected"
             else:
                 summary = "All application data"
-            self.apps_choice.setText(summary + "…")
+            self.apps_choice.setValue(summary)
             if not CONFIG.get("include_app_data", True):
                 settings_summary = "None selected"
             elif CONFIG.get("app_selection_mode", "all") == "all":
                 settings_summary = "All curated settings"
             else:
                 settings_summary = f"{len(selection & system_ids)} selected"
-            self.settings_choice.setText(settings_summary + "…")
+            self.settings_choice.setValue(settings_summary)
             schedule = CONFIG.get("schedule", {})
-            self.schedule_button.setText((schedule_summary(schedule) if schedule.get("enabled") else "Automatic backups off") + "…")
+            self.schedule_button.setValue(schedule_summary(schedule) if schedule.get("enabled") else "Off")
 
     def configure_applications(self, category="applications"):
         if self._repo_op_running:

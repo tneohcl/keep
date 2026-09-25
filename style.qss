@@ -2,17 +2,22 @@
    Geometry is shared across themes; colors are resolved by theming.py. */
 QWidget { background: transparent; color: $TEXT_PRIMARY; }
 QWidget#keepWindow, QDialog { background: $BG_WINDOW; }
-QWidget#planPanel, QWidget#summarySurface, QWidget#historySurface, QWidget#restoreSurface {
+QWidget#summarySurface, QWidget#historySurface, QWidget#restoreSurface {
     background: $BG_PANEL; border: 1px solid $BORDER_OUTER; border-radius: 8px;
 }
 QLabel { background: transparent; border: none; }
+/* ODCS window model: toolbar over a sidebar + content split (odcs-ui DESIGN.md). */
+QWidget#keepToolbar { background: $BG_WINDOW; border-bottom: 1px solid $BORDER_OUTER; }
+QLabel#keepAppTitle { font-weight: 600; }
+QWidget#keepSidebar { background: $BG_WINDOW; border-right: 1px solid $BORDER_OUTER; }
+QStackedWidget#keepContent { background: $BG_PANEL; }
 QLabel[role="secondary"] { color: $TEXT_SECONDARY; }
 QLabel[role="error"] { color: $ERROR; }
 QGroupBox { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; padding-top: 20px; }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; left: 8px; top: 3px; padding: 0 6px; font-weight: 600; }
 QPushButton {
-    min-height: 24px; min-width: 80px; padding: 6px 12px;
-    border: 1px solid $BORDER_STRONG; border-radius: 6px;
+    min-height: 26px; min-width: 80px; padding: 4px 12px;
+    border: 1px solid $BORDER_STRONG; border-radius: 4px;
     background: $BG_CONTROL; color: $TEXT_PRIMARY;
 }
 QPushButton:hover { background: $BG_CONTROL_HOVER; border-color: $BORDER_HOVER; }

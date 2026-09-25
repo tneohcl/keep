@@ -2104,8 +2104,8 @@ if win_hh is not None:
           win_hh.btn_stop.isHidden())
     check("Phase HH: btn_refresh does not expand (small/tertiary, unlike Backup Now)",
           not hasattr(win_hh, "btn_refresh"))
-    check("Phase HH: btn_backup still expands (stays primary)",
-          win_hh.btn_backup.sizePolicy().horizontalPolicy() == QSizePolicy.Expanding)
+    check("Phase HH: btn_backup is the Status view's primary action",
+          win_hh.btn_backup.property("role") == "primary")
 
     # Drive a real start_backup() -> finished cycle to prove Stop's
     # visibility is wired to the real backup lifecycle, not just correct at
