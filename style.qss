@@ -1,0 +1,100 @@
+/* Keep shared Qt design system, adapted from the supplied VeloCoder reference.
+   Geometry is shared across themes; colors are resolved by theming.py. */
+QWidget { background: transparent; color: $TEXT_PRIMARY; }
+QWidget#keepWindow, QDialog { background: $BG_WINDOW; }
+QWidget#planPanel, QWidget#summarySurface, QWidget#historySurface, QWidget#restoreSurface {
+    background: $BG_PANEL; border: 1px solid $BORDER_OUTER; border-radius: 8px;
+}
+QLabel { background: transparent; border: none; }
+QLabel[role="secondary"] { color: $TEXT_SECONDARY; }
+QLabel[role="error"] { color: $ERROR; }
+QGroupBox { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; padding-top: 20px; }
+QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; left: 8px; top: 3px; padding: 0 6px; font-weight: 600; }
+QPushButton {
+    min-height: 24px; min-width: 80px; padding: 6px 12px;
+    border: 1px solid $BORDER_STRONG; border-radius: 6px;
+    background: $BG_CONTROL; color: $TEXT_PRIMARY;
+}
+QPushButton:hover { background: $BG_CONTROL_HOVER; border-color: $BORDER_HOVER; }
+QPushButton:pressed, QPushButton:checked { background: $BG_CONTROL_PRESSED; }
+QPushButton:disabled { color: $TEXT_DISABLED; background: $BG_DISABLED; border-color: $BORDER; }
+QPushButton:focus { border-color: $ACCENT; }
+QPushButton[role="primary"] { background: $ACCENT; color: $TEXT_ON_ACCENT; border-color: $ACCENT; font-weight: 600; }
+QPushButton[role="primary"]:hover { background: $ACCENT_HOVER; }
+QPushButton[role="primary"]:pressed { background: $ACCENT_PRESSED; }
+QPushButton[role="primary"]:disabled { background: $BG_ACCENT_DISABLED; color: $TEXT_ACCENT_DISABLED; border-color: $BORDER; }
+QPushButton[navigation="true"] { background: $BG_WINDOW; color: $TEXT_SECONDARY; border-color: $BORDER_OUTER; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+QPushButton[navigation="true"]:checked { background: $BG_PANEL; color: $TEXT_PRIMARY; border-bottom-color: $BG_PANEL; font-weight: 600; }
+QTabWidget::pane { background: $BG_PANEL; border: 1px solid $BORDER_OUTER; top: -1px; }
+QTabWidget::tab-bar { left: 8px; }
+QTabBar::tab { background: $BG_WINDOW; color: $TEXT_SECONDARY; padding: 7px 12px; margin-right: 2px; border: 1px solid $BORDER_OUTER; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+QTabBar::tab:selected { background: $BG_PANEL; color: $TEXT_PRIMARY; border-bottom-color: $BG_PANEL; margin-bottom: -1px; }
+QTabBar::tab:hover:!selected { color: $TEXT_PRIMARY; }
+QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTimeEdit {
+    background: $BG_FIELD; color: $TEXT_PRIMARY; border: 1px solid $BORDER; border-radius: 5px; padding: 6px;
+    selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY;
+}
+QComboBox { min-height: 24px; padding-right: 24px; }
+QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: $ACCENT; }
+QComboBox QAbstractItemView { background: $BG_PANEL; color: $TEXT_PRIMARY; selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY; }
+QListView, QTreeView, QTableView { background: $BG_FIELD; alternate-background-color: $BG_PANEL; color: $TEXT_PRIMARY; border: 1px solid $BORDER; border-radius: 5px; selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY; }
+QListView::item:hover, QTreeView::item:hover { background: $HOVER_BG; }
+QListView::item:selected, QTreeView::item:selected { background: $SELECTION_BG; color: $TEXT_PRIMARY; }
+QHeaderView::section { background: $BG_PANEL; color: $TEXT_SECONDARY; padding: 6px 10px; border: none; border-bottom: 1px solid $BORDER; }
+QScrollArea { background: transparent; border: none; }
+QScrollBar:vertical { background: $BG_WINDOW; width: 12px; margin: 0; }
+QScrollBar::handle:vertical { background: $BORDER_STRONG; min-height: 28px; border-radius: 5px; }
+QScrollBar:horizontal { background: $BG_WINDOW; height: 12px; margin: 0; }
+QScrollBar::handle:horizontal { background: $BORDER_STRONG; min-width: 28px; border-radius: 5px; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QProgressBar { border: 1px solid $BORDER; background: $BG_FIELD; border-radius: 4px; text-align: center; }
+QProgressBar::chunk { background: $ACCENT; border-radius: 3px; }
+QMenuBar { background: $BG_WINDOW; color: $TEXT_PRIMARY; }
+QMenuBar::item:selected, QMenu::item:selected { background: $SELECTION_BG; }
+QMenu { background: $BG_PANEL; color: $TEXT_PRIMARY; border: 1px solid $BORDER_OUTER; padding: 4px; }
+QMenu::item { padding: 6px 24px; }
+QMenu::item:disabled { color: $TEXT_DISABLED; }
+QToolTip { background: $BG_PANEL; color: $TEXT_PRIMARY; border: 1px solid $BORDER_OUTER; padding: 6px; }
+
+/* Shared dropdown chrome, including the Restore archive and view selectors. */
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
+QComboBox::down-arrow { image: url("$CHEVRON_PATH"); width: 12px; height: 12px; }
+QComboBox:hover { border-color: $BORDER_HOVER; }
+QComboBox QAbstractItemView { background: $BG_FIELD; color: $TEXT_PRIMARY; border: 1px solid $BORDER; padding: 4px; selection-background-color: $SELECTION_BG; }
+QTabWidget#workspaceTabs::pane { border: 1px solid $BORDER_OUTER; border-radius: 8px; background: $BG_PANEL; }
+
+QWidget#restoreSurface { border: none; background: transparent; }
+
+/* Explicit indicators: native checkbox painting can disappear under QSS. */
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator, QListView::indicator, QTreeView::indicator {
+    width: 16px; height: 16px; border: 1px solid $TEXT_SECONDARY;
+    border-radius: 3px; background: $BG_FIELD;
+}
+QCheckBox::indicator:hover, QListView::indicator:hover, QTreeView::indicator:hover {
+    background: $BG_CONTROL_HOVER;
+}
+QCheckBox::indicator:checked, QListView::indicator:checked, QTreeView::indicator:checked {
+    background: #1769aa; border-color: #1769aa; image: url("$CHECK_PATH");
+}
+QCheckBox::indicator:checked:hover, QListView::indicator:checked:hover, QTreeView::indicator:checked:hover {
+    background: #2078bc;
+}
+QCheckBox::indicator:disabled, QListView::indicator:disabled, QTreeView::indicator:disabled {
+    background: $BG_DISABLED; border-color: $TEXT_DISABLED;
+}
+QCheckBox:disabled { color: $TEXT_DISABLED; }
+
+/* Always use the same item box model. Styling only :hover can switch
+   between native and QSS item geometry on desktop styles such as Breeze. */
+QListWidget#applicationChoices::item {
+    background: transparent; border: 1px solid transparent;
+    border-radius: 4px; padding: 2px; margin: 0;
+}
+QListWidget#applicationChoices::item:hover { background: $HOVER_BG; }
+QListWidget#applicationChoices::item:selected { background: $SELECTION_BG; }
+QListWidget#applicationChoices::item:selected:hover { background: $SELECTION_BG; }
+
+QMenu::indicator { width: 16px; height: 16px; border: 1px solid $TEXT_SECONDARY; border-radius: 3px; background: $BG_FIELD; }
+QMenu::indicator:checked { image: url("$CHECK_PATH"); background: #1769aa; border-color: #1769aa; }

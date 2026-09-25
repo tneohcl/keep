@@ -1,0 +1,30 @@
+name: Linux backup and package checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  debian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable FUSE and build test environment
+        run: |
+          sudo modprobe fuse
+          docker build -f packaging/Dockerfile.test -t keep-validation .
+      - name: Test Borg recovery and package installation
+        run: |
+          set -o pipefail
+          docker run --name keep-validation --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=unconfined keep-validation 2>&1 | tee linux-validation.log
+      - name: Collect Debian package
+        if: success()
+        run: docker cp keep-validation:/keep/dist ./dist
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-validation
+          path: |
+            linux-validation.log
+            dist/*.deb

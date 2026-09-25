@@ -1,0 +1,10 @@
+# Generated Python files
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local configuration and generated review/build artifacts
+/config.json
+/dist/
+/ui-review/
+/*.log
