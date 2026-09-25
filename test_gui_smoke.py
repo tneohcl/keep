@@ -208,6 +208,23 @@ with tempfile.TemporaryDirectory() as directory:
     dialog.passphrase.setText("typed")
     assert dialog.start_button.isEnabled() and dialog.start_button.property("role") == "primary"
     dialog.deleteLater()
+    # Recovery access: verified facts apart from dated personal confirmations.
+    from keep_ui import recovery_access
+    import recovery_test
+    window._refresh_facts({"repo": "/fixture/repo"})
+    assert window.recovery_access_row.value() == "Not yet tested"
+    access = recovery_access.RecoveryAccessDialog(
+        "/fixture/repo", {"available": True, "label": "TITAN-i", "type": "network"},
+        {"encryption": {"mode": "repokey-blake2"}}, 2, "Today at 9:00 AM", main.borg_env, lambda: None, window)
+    assert access.export_button.isEnabled() and access.test_button.property("role") == "primary"
+    assert "sign in to TITAN-i" in access.confirm_boxes["destination_access"].text()
+    access.confirm_boxes["passphrase_saved"].setChecked(True)
+    assert recovery_test.confirmation(recovery_test.load_access("/fixture/repo"), "passphrase_saved")[0] == "confirmed"
+    access.confirm_boxes["passphrase_saved"].setChecked(False)
+    assert recovery_test.load_access("/fixture/repo") == {}
+    assert recovery_access.encryption_fact({"encryption": {"mode": "keyfile-blake2"}})[0] == "warning"
+    assert recovery_access.encryption_fact(None)[0] == "never"
+    access.deleteLater()
     picker = window.apps_picker
     picker._installed_apps_provider = lambda: SimpleNamespace(contains=lambda *ids: "Firefox" in ids)
     picker.populate([main.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications")])

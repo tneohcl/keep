@@ -14,7 +14,7 @@ from odcs_ui.widgets import SettingsList
 
 
 class BackupPanel(QWidget):
-    CONTROL_NAMES = ('apps_choice', 'btn_backup', 'btn_stop', 'destination_choice', 'plan_panel', 'schedule_button', 'settings_choice', 'source_choice')
+    CONTROL_NAMES = ('apps_choice', 'btn_backup', 'btn_stop', 'destination_choice', 'plan_panel', 'recovery_access_row', 'recovery_panel', 'schedule_button', 'settings_choice', 'source_choice')
 
     def __init__(self, controller):
         super().__init__()
@@ -36,8 +36,10 @@ class BackupPanel(QWidget):
             row = self.plan_panel.addRow(label, "", lambda checked=False, callback=callback: callback())
             setattr(self, name, row)
         shell.addWidget(self.plan_panel)
-        self.recovery_slot = QVBoxLayout()  # Recovery group (phase D) goes here
-        shell.addLayout(self.recovery_slot)
+        self.recovery_panel = SettingsList("Recovery")
+        self.recovery_access_row = self.recovery_panel.addRow(
+            "Recovery access", "", lambda checked=False: controller.show_recovery_access())
+        shell.addWidget(self.recovery_panel)
         shell.addStretch(1)
 
         self.btn_backup = QPushButton("Back up now")

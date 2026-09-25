@@ -16,6 +16,7 @@ from keep_ui.common import DisclosureSection
 from keep_ui.restore_results import show_restore_results
 from keep_ui.application_selection import ApplicationSelectionDialog
 from keep_ui.recovery_test_dialog import RecoveryTestDialog
+from keep_ui import recovery_access
 import recovery_test
 import base64
 import glob
@@ -2722,6 +2723,7 @@ class MainWindow(QWidget):
         self.action_backup_sources.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.action_schedule.setShortcut(QKeySequence("Ctrl+Shift+A"))
         backup_menu.addSeparator()
+        self.action_recovery_access = backup_menu.addAction("Recovery access…", self.show_recovery_access)
         self.action_test_recovery = backup_menu.addAction("Test recovery…", self.test_recovery)
         backup_menu.addSeparator()
         self.action_exit = backup_menu.addAction("Exit", self.close)
@@ -3110,9 +3112,21 @@ class MainWindow(QWidget):
         record = recovery_test.load()
         state, when, advice = recovery_test.status(record, dest.get("repo"))
         facts.setFact("recovery", state, friendly_timestamp(when) if when else "", advice)
+        self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo")))
         if state != "never":
             self.lbl_restore_test.setText(f"{record.get('result')} ({friendly_timestamp(when)})")
             theming.role(self.lbl_restore_test, "error" if state == "error" else "")
+
+    def show_recovery_access(self):
+        dest = refresh_destination()
+        repo, info, archive_count, verified = getattr(self, "_verified_repo_info", (None, None, None, None))
+        if repo != dest.get("repo"):
+            info, archive_count, verified = None, None, None
+        dialog = recovery_access.RecoveryAccessDialog(
+            dest.get("repo"), dest, info if dest["available"] else None, archive_count,
+            friendly_timestamp(verified) if verified else None, borg_env, self.test_recovery, self)
+        dialog.changed.connect(lambda: self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"))))
+        dialog.exec()
 
     def test_recovery(self):
         """Prove a file comes back using only the typed passphrase (recovery_test.py)."""
@@ -3285,6 +3299,9 @@ class MainWindow(QWidget):
             # changed the destination already triggered its own fresh
             # refresh_status() call, so just drop this one.
             return
+        # Recovery access shows these as "Verified by Keep" facts.
+        self._verified_repo_info = (queried_repo, info, len(listing.get("archives", [])) if listing else None,
+                                    datetime.now().astimezone().isoformat(timespec="seconds"))
         if info:
             stats = info.get("cache", {}).get("stats", {})
             size_gb = stats.get("unique_csize", 0) / (1024**3)

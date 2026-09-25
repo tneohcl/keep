@@ -100,6 +100,20 @@ class RecordAndStatus(unittest.TestCase):
         self.assertEqual(state, "error")
         self.assertIn("passphrase", advice)
 
+    def test_access_confirmations_are_per_repository_dated_and_expire(self):
+        recovery_test.save_access("/r", {"passphrase_saved": "2026-09-01T10:00:00+00:00"}, self.root)
+        recovery_test.save_access("/other", {"kit_offsite": "2026-09-01T10:00:00+00:00"}, self.root)
+        entry = recovery_test.load_access("/r", self.root)
+        self.assertEqual(set(entry), {"passphrase_saved"})
+        now = datetime.datetime(2026, 9, 25, tzinfo=datetime.timezone.utc)
+        self.assertEqual(recovery_test.confirmation(entry, "passphrase_saved", now)[0], "confirmed")
+        self.assertEqual(recovery_test.confirmation(entry, "kit_offsite", now)[0], "no")
+        later = datetime.datetime(2027, 10, 1, tzinfo=datetime.timezone.utc)
+        self.assertEqual(recovery_test.confirmation(entry, "passphrase_saved", later)[0], "stale")
+        recovery_test.save_access("/r", {"passphrase_saved": None}, self.root)
+        self.assertEqual(recovery_test.load_access("/r", self.root), {})
+        self.assertEqual((self.root / recovery_test.ACCESS_FILE).stat().st_mode & 0o777, 0o600)
+
 
 if __name__ == "__main__":
     unittest.main()

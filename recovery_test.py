@@ -272,3 +272,58 @@ def status(record_, repository, now=None):
     except (TypeError, ValueError):
         return "warning", when, "Test again to confirm recovery still works."
     return "ok", when, "A file was restored using only your passphrase."
+
+
+# --------------------------------------------------------------------------
+# Recovery access: what only the person can confirm (Keep can't see a
+# password manager or a drawer). Stored per repository with the date each
+# item was confirmed, so Keep can ask again after a year. Never where the
+# copies are.
+ACCESS_FILE = "recovery-access.json"
+CONFIRM_STALE_DAYS = 365
+CONFIRMATIONS = ("passphrase_saved", "kit_offsite", "destination_access")
+
+
+def _load_all_access(root=None):
+    try:
+        data = json.loads((Path(root or state_root()) / ACCESS_FILE).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def load_access(repository, root=None):
+    entry = _load_all_access(root).get(repository)
+    return entry if isinstance(entry, dict) else {}
+
+
+def save_access(repository, changes, root=None):
+    """Merge `changes` ({key: iso-date or None to clear}) into this repository's entry."""
+    everything = _load_all_access(root)
+    entry = everything.setdefault(repository, {})
+    for key, value in changes.items():
+        if value is None:
+            entry.pop(key, None)
+        else:
+            entry[key] = value
+    path = Path(root or state_root()) / ACCESS_FILE
+    consumer.write_config(path, everything)
+    os.chmod(path, 0o600)
+    return entry
+
+
+def confirmation(entry, key, now=None):
+    """("confirmed" | "stale" | "no", when-iso-or-None) for one confirmation."""
+    when = entry.get(key)
+    if not when:
+        return "no", None
+    try:
+        confirmed = datetime.datetime.fromisoformat(when)
+        now = now or datetime.datetime.now(confirmed.tzinfo)
+        return ("stale" if (now - confirmed).days > CONFIRM_STALE_DAYS else "confirmed"), when
+    except (TypeError, ValueError):
+        return "stale", None
+
+
+def now_iso():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
