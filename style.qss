@@ -27,7 +27,7 @@ QPushButton {
 QPushButton:hover { background: $BG_CONTROL_HOVER; border-color: $BORDER_HOVER; }
 QPushButton:pressed, QPushButton:checked { background: $BG_CONTROL_PRESSED; }
 QPushButton:disabled { color: $TEXT_DISABLED; background: $BG_DISABLED; border-color: $BORDER; }
-QPushButton:focus { border-color: $ACCENT; }
+QPushButton[focusVisible="true"] { border-color: $ACCENT; }
 QPushButton[role="primary"] { background: $ACCENT; color: $TEXT_ON_ACCENT; border-color: $ACCENT; font-weight: 600; }
 QPushButton[role="primary"]:hover { background: $ACCENT_HOVER; }
 QPushButton[role="primary"]:pressed { background: $ACCENT_PRESSED; }
@@ -44,7 +44,7 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTime
     selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY;
 }
 QComboBox { min-height: 24px; padding-right: 24px; }
-QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: $ACCENT; }
+QLineEdit[focusVisible="true"], QPlainTextEdit[focusVisible="true"], QComboBox[focusVisible="true"] { border-color: $ACCENT; }
 QComboBox QAbstractItemView { background: $BG_PANEL; color: $TEXT_PRIMARY; selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY; }
 QListView, QTreeView, QTableView { background: $BG_FIELD; alternate-background-color: $BG_PANEL; color: $TEXT_PRIMARY; border: 1px solid $BORDER; border-radius: 5px; selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY; }
 QListView::item:hover, QTreeView::item:hover { background: $HOVER_BG; }

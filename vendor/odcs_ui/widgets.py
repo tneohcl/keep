@@ -252,10 +252,12 @@ class StatusFacts(QFrame):
         self._grid.setColumnStretch(2, 1)
         outer.addLayout(self._grid)
         self.facts: dict[str, dict] = {}
+        self._rows: list[list[QFrame]] = []
 
     def addFact(self, key: str, title: str, description: str = "", state: str = "never",  # noqa: N802
                 when: str = "", action: tuple[str, Callable[[], None]] | None = None) -> None:
         row = len(self.facts)
+        cells: list[QFrame] = []
         icon = StatusIcon(state)
         title_label = QLabel(title)
         desc_label = QLabel(description)
@@ -270,11 +272,13 @@ class StatusFacts(QFrame):
             lay.setContentsMargins(0, 8, 10, 8)
             lay.addWidget(widget)
             self._grid.addWidget(cell, row, col)
+            cells.append(cell)
         button = None
         if not action:  # keep the hairline running under the action column
             filler = QFrame()
             filler.setObjectName("odcsFactCell")
             self._grid.addWidget(filler, row, 4)
+            cells.append(filler)
         if action:
             button = QPushButton(action[0])
             button.setAutoDefault(False)
@@ -285,6 +289,14 @@ class StatusFacts(QFrame):
             lay.setContentsMargins(0, 4, 0, 4)
             lay.addWidget(button)
             self._grid.addWidget(cell, row, 4)
+            cells.append(cell)
+        # Separators run between facts, not under the last one.
+        for previous in self._rows[-1:]:
+            for cell in previous:
+                _set_property(cell, "last", "false")
+        for cell in cells:
+            _set_property(cell, "last", "true")
+        self._rows.append(cells)
         self.facts[key] = {"icon": icon, "title": title_label, "description": desc_label,
                            "when": when_label, "action": button}
 

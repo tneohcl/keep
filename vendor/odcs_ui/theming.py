@@ -17,7 +17,7 @@ from typing import Callable, Iterable, Mapping
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from . import color, tokens
 
@@ -91,6 +91,44 @@ def render(qss: str, values: Mapping[str, str]) -> str:
     return _TOKEN.sub(lambda m: str(values[m.group(1)]), qss)
 
 
+class FocusVisibleFilter(QObject):
+    """QSS has no :focus-visible. A plain :focus ring also lights up on a
+    mouse click and when a window is re-activated, pointing at a control the
+    person is already looking at. This mirrors the browser heuristic onto a
+    `focusVisible` property: true only when focus arrived by Tab/Shift+Tab.
+    base.qss styles `[focusVisible="true"]` instead of `:focus`.
+    (Proven in VeloCoder first; moved here in 0.3.)"""
+
+    KEYBOARD_REASONS = (Qt.FocusReason.TabFocusReason, Qt.FocusReason.BacktabFocusReason)
+
+    def eventFilter(self, obj, event):  # noqa: N802 (Qt API)
+        # FocusIn/Out also reach QWindow objects, which have no style().
+        if not isinstance(obj, QWidget):
+            return False
+        if event.type() == QEvent.Type.FocusIn:
+            self._set(obj, event.reason() in self.KEYBOARD_REASONS)
+        elif event.type() == QEvent.Type.FocusOut:
+            self._set(obj, False)
+        return False
+
+    @staticmethod
+    def _set(widget, visible):
+        if bool(widget.property("focusVisible")) != visible:
+            widget.setProperty("focusVisible", visible)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+
+def install_focus_visible(app: QApplication) -> FocusVisibleFilter:
+    """Install the keyboard-only focus ring once per application."""
+    existing = getattr(app, "_odcs_focus_visible", None)
+    if existing is None:
+        existing = FocusVisibleFilter(app)
+        app.installEventFilter(existing)
+        app._odcs_focus_visible = existing
+    return existing
+
+
 class ThemeController(QObject):
     """Owns the application stylesheet. Re-applies on theme choice changes and,
     for "system", on live desktop palette / color-scheme changes."""
@@ -111,6 +149,7 @@ class ThemeController(QObject):
         self._busy = False
         app.installEventFilter(self)
         app.styleHints().colorSchemeChanged.connect(lambda *_: self._on_system_change())
+        install_focus_visible(app)
 
     def set_choice(self, choice: str) -> None:
         self.choice = choice if choice in dict(THEME_CHOICES) else "system"

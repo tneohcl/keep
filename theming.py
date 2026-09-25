@@ -89,6 +89,8 @@ class ThemeController(QObject):
 def install(app, choice=None):
     if not hasattr(app, "_keep_theme"):
         app._keep_theme = ThemeController(app)
+        # Keyboard-only focus ring: style.qss matches [focusVisible="true"].
+        odcs_theming.install_focus_visible(app)
     if choice is not None:
         app._keep_theme.set_choice(choice)
     else:

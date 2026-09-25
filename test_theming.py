@@ -90,5 +90,22 @@ assert len(app.findChildren(theming.ThemeController)) == 1
         theming.role(button, "")
         self.assertEqual(button.property("role"), "")
 
+    def test_focus_ring_is_keyboard_only(self):
+        # A click or window re-activation must not paint the accent ring
+        # (it did on the Status/Restore switch at launch); Tab must.
+        import re
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QFocusEvent
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        theming.install(app)  # the shared app keeps its current theme choice
+        qss = theming.stylesheet(app.palette(), "light").replace("::item:focus", "")
+        self.assertIsNone(re.search(r":focus\b", qss))
+        button = QPushButton("Back up now")
+        QApplication.sendEvent(button, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.ActiveWindowFocusReason))
+        self.assertFalse(button.property("focusVisible"))
+        QApplication.sendEvent(button, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.TabFocusReason))
+        self.assertTrue(button.property("focusVisible"))
+
 if __name__ == "__main__":
     unittest.main()

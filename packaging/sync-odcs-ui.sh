@@ -1,5 +1,5 @@
 #!/bin/bash
-# Refresh Keep's bundled copy of odcs-ui from a release tag.
+# Refresh this app's bundled copy of odcs-ui from a release tag.
 # vendor/odcs_ui is generated: never edit it by hand, change odcs-ui and re-sync.
 #   packaging/sync-odcs-ui.sh v0.2.0
 set -euo pipefail
