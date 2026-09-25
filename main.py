@@ -2794,6 +2794,14 @@ class MainWindow(QWidget):
         bar.setSpacing(8)
         app_title = QLabel("Keep")
         app_title.setObjectName("keepAppTitle")
+        # The app name is the brand: body x 1.6, weight 700 (16pt at the usual
+        # 10pt body, the ODCS About dialog's app-name size). In points so
+        # desktop font scaling applies. Set here, not in style.qss: a QSS
+        # font rule would replace this font.
+        title_font = QFont(app_title.font())
+        title_font.setPointSizeF(title_font.pointSizeF() * 1.6)
+        title_font.setWeight(QFont.Bold)
+        app_title.setFont(title_font)
         app_title.setFixedWidth(284)
         bar.addWidget(app_title)
         bar.addWidget(self.view_switch)
