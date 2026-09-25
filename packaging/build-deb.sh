@@ -19,8 +19,12 @@ Description: Linux desktop backup and recovery with BorgBackup
  Versioned encrypted backups, automatic schedules and safe file recovery.
 EOF
 # Explicit allowlist: never package user configuration or credentials.
-install -m 644 main.py cli.py borg_ops.py operation_lock.py app_logging.py mount_service.py consumer.py destination.py keep_backup.py applications.py themes.py theming.py style.qss chevron-down.svg check.svg "$stage/usr/lib/keep/"
+install -m 644 main.py cli.py borg_ops.py operation_lock.py recovery_test.py app_logging.py mount_service.py consumer.py destination.py keep_backup.py applications.py themes.py theming.py style.qss chevron-down.svg check.svg "$stage/usr/lib/keep/"
 install -m 644 keep_ui/*.py "$stage/usr/lib/keep/keep_ui/"
+# Bundled odcs-ui (pinned by packaging/sync-odcs-ui.sh; not available from apt).
+install -d "$stage/usr/lib/keep/vendor/odcs_ui"
+install -m 644 vendor/ODCS_UI_VERSION "$stage/usr/lib/keep/vendor/"
+install -m 644 vendor/odcs_ui/*.py vendor/odcs_ui/*.json vendor/odcs_ui/*.qss vendor/odcs_ui/LICENSE "$stage/usr/lib/keep/vendor/odcs_ui/"
 printf '#!/bin/sh\nexec /usr/bin/python3 /usr/lib/keep/main.py "$@"\n' > "$stage/usr/bin/keep"
 chmod 755 "$stage/usr/bin/keep"
 printf '#!/bin/sh\nexec /usr/bin/python3 /usr/lib/keep/cli.py "$@"\n' > "$stage/usr/bin/keep-cli"

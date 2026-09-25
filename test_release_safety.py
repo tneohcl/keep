@@ -72,6 +72,24 @@ class ReleaseSafetyTests(unittest.TestCase):
             rows = consumer.recent_activity(directory)
             self.assertEqual([row[1] for row in rows], ["No final result recorded", "Backup stopped", "Completed with warnings"])
 
+    def test_activity_only_lists_this_destinations_backups(self):
+        # A repository deleted and re-created at the same path is a different
+        # backup: its runs must not appear once the new one has an ID on record.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def log(name, repo, repo_id, text):
+                header = f"2026-09-25T06:00:00+08:00 Keep backup started\n2026-09-25T06:00:00+08:00 Repository: {repo}\n"
+                if repo_id:
+                    header += f"2026-09-25T06:00:01+08:00 Repository ID: {repo_id}\n"
+                (root / f"backup-{name}.log").write_text(header + text)
+            log("1", "/nas/repo", "old-id", "backup completed successfully")
+            log("2", "/other/repo", "other-id", "backup completed successfully")
+            log("3", "/nas/repo", "new-id", "backup completed with warnings")
+            log("4", "/nas/repo", None, "STOPPED BY USER")  # older log, no ID recorded
+            rows = consumer.recent_activity(directory, "/nas/repo", "new-id")
+            self.assertEqual([row[1] for row in rows], ["Backup stopped", "Completed with warnings"])
+            self.assertEqual(len(consumer.recent_activity(directory)), 3)  # unfiltered: newest three
+
     def test_drive_subpath_cannot_escape_mount(self):
         with tempfile.TemporaryDirectory() as directory:
             mount = Path(directory) / "drive"

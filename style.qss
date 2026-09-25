@@ -2,23 +2,33 @@
    Geometry is shared across themes; colors are resolved by theming.py. */
 QWidget { background: transparent; color: $TEXT_PRIMARY; }
 QWidget#keepWindow, QDialog { background: $BG_WINDOW; }
-QWidget#planPanel, QWidget#summarySurface, QWidget#historySurface, QWidget#restoreSurface {
+QWidget#summarySurface, QWidget#factsSurface, QWidget#historySurface, QWidget#restoreSurface {
     background: $BG_PANEL; border: 1px solid $BORDER_OUTER; border-radius: 8px;
 }
 QLabel { background: transparent; border: none; }
+/* ODCS window model: toolbar over a sidebar + content split (odcs-ui DESIGN.md). */
+QWidget#keepToolbar { background: $BG_WINDOW; border-bottom: 1px solid $BORDER_OUTER; }
+QLabel#keepAppTitle { font-weight: 600; }
+QWidget#keepSidebar { background: $BG_WINDOW; border-right: 1px solid $BORDER_OUTER; }
+QStackedWidget#keepContent { background: $BG_PANEL; }
+/* Inside a card the facts heading matches the other card titles. */
+QWidget#factsSurface QLabel#odcsGroupHeading { color: $TEXT_PRIMARY; padding: 0; }
+QListWidget#keepBackupList { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; padding: 0; }
+QFrame#recoveryTable { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; }
+QFrame#recoveryTestNote { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; }
 QLabel[role="secondary"] { color: $TEXT_SECONDARY; }
 QLabel[role="error"] { color: $ERROR; }
 QGroupBox { background: $BG_PANEL; border: 1px solid $BORDER; border-radius: 8px; padding-top: 20px; }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; left: 8px; top: 3px; padding: 0 6px; font-weight: 600; }
 QPushButton {
-    min-height: 24px; min-width: 80px; padding: 6px 12px;
-    border: 1px solid $BORDER_STRONG; border-radius: 6px;
+    min-height: 26px; min-width: 80px; padding: 4px 12px;
+    border: 1px solid $BORDER_STRONG; border-radius: 4px;
     background: $BG_CONTROL; color: $TEXT_PRIMARY;
 }
 QPushButton:hover { background: $BG_CONTROL_HOVER; border-color: $BORDER_HOVER; }
 QPushButton:pressed, QPushButton:checked { background: $BG_CONTROL_PRESSED; }
 QPushButton:disabled { color: $TEXT_DISABLED; background: $BG_DISABLED; border-color: $BORDER; }
-QPushButton:focus { border-color: $ACCENT; }
+QPushButton[focusVisible="true"] { border-color: $ACCENT; }
 QPushButton[role="primary"] { background: $ACCENT; color: $TEXT_ON_ACCENT; border-color: $ACCENT; font-weight: 600; }
 QPushButton[role="primary"]:hover { background: $ACCENT_HOVER; }
 QPushButton[role="primary"]:pressed { background: $ACCENT_PRESSED; }
@@ -35,7 +45,7 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTime
     selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY;
 }
 QComboBox { min-height: 24px; padding-right: 24px; }
-QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: $ACCENT; }
+QLineEdit[focusVisible="true"], QPlainTextEdit[focusVisible="true"], QComboBox[focusVisible="true"] { border-color: $ACCENT; }
 QComboBox QAbstractItemView { background: $BG_PANEL; color: $TEXT_PRIMARY; selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY; }
 QListView, QTreeView, QTableView { background: $BG_FIELD; alternate-background-color: $BG_PANEL; color: $TEXT_PRIMARY; border: 1px solid $BORDER; border-radius: 5px; selection-background-color: $SELECTION_BG; selection-color: $TEXT_PRIMARY; }
 QListView::item:hover, QTreeView::item:hover { background: $HOVER_BG; }
@@ -86,15 +96,8 @@ QCheckBox::indicator:disabled, QListView::indicator:disabled, QTreeView::indicat
 }
 QCheckBox:disabled { color: $TEXT_DISABLED; }
 
-/* Always use the same item box model. Styling only :hover can switch
-   between native and QSS item geometry on desktop styles such as Breeze. */
-QListWidget#applicationChoices::item {
-    background: transparent; border: 1px solid transparent;
-    border-radius: 4px; padding: 2px; margin: 0;
-}
-QListWidget#applicationChoices::item:hover { background: $HOVER_BG; }
-QListWidget#applicationChoices::item:selected { background: $SELECTION_BG; }
-QListWidget#applicationChoices::item:selected:hover { background: $SELECTION_BG; }
+/* Tile lists draw their own tiles (keep_ui/checkable_list.py); no frame around them. */
+QListWidget#applicationChoices { background: transparent; border: none; }
 
 QMenu::indicator { width: 16px; height: 16px; border: 1px solid $TEXT_SECONDARY; border-radius: 3px; background: $BG_FIELD; }
 QMenu::indicator:checked { image: url("$CHECK_PATH"); background: #1769aa; border-color: #1769aa; }

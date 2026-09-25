@@ -1,8 +1,10 @@
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem, QComboBox, QStyle, QScrollArea, QFrame, QMenu, QAbstractItemView
+from PySide6.QtWidgets import QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QListWidget, QListWidgetItem, QStyle, QScrollArea, QFrame, QMenu, QAbstractItemView
 
-from .checkable_list import CheckableListWidget
+import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
+from odcs_ui.widgets import ViewSwitch
+from .checkable_list import CheckableListWidget, apply_tile_mode
 
 SECTION_ORDER = ["personal", "applications", "system", "folders"]
 SECTION_HEADERS = {
@@ -20,16 +22,26 @@ class SectionListWidget(CheckableListWidget):
 
     def fit_height(self):
         grid = self.gridSize()
-        if not self.count() or grid.width() <= 0 or grid.height() <= 0:
+        visible = sum(not self.item(i).isHidden() for i in range(self.count()))
+        if not visible or grid.width() <= 0 or grid.height() <= 0:
             self.setFixedHeight(0)
             return
         columns = max(1, self.viewport().width() // grid.width())
-        self.setFixedHeight(((self.count() + columns - 1) // columns) * grid.height() + 4)
+        self.setFixedHeight(((visible + columns - 1) // columns) * grid.height() + 4)
+
+def view_switch(accessible_name):
+    """Grid / List segmented switch (odcs ViewSwitch) with theme icons."""
+    switch = ViewSwitch(["Grid", "List"], accessible_name=accessible_name)
+    for button, icon in zip(switch.buttons(), ("view-list-icons", "view-list-details")):
+        button.setIcon(QIcon.fromTheme(icon))
+        button.setToolTip(f"Show as {button.text().lower()}")
+    return switch
+
 
 class RestorePicker(QWidget):
     """Checkable restore catalog, shared by Apps and Folders; no backend imports."""
 
-    def __init__(self, hint_text, parent=None, ensure_mounted_cb=None, touch_activity_cb=None, backup_now_cb=None, process_names=None, installed_apps_provider=None):
+    def __init__(self, hint_text, parent=None, ensure_mounted_cb=None, touch_activity_cb=None, backup_now_cb=None, process_names=None, installed_apps_provider=None, search_placeholder="Find an item"):
         super().__init__(parent)
         self._ensure_mounted_cb = ensure_mounted_cb or (lambda: None)
         self._touch_activity_cb = touch_activity_cb or (lambda: None)
@@ -37,6 +49,7 @@ class RestorePicker(QWidget):
         self._placeholder_mode = "startup"
         self._icon_mode = True
         self._sections = {}  # Rebuilt for each archive.
+        self._headers = {}
         self.process_names = process_names or {}
         self._installed_apps_provider = installed_apps_provider
         self._catalog = []
@@ -45,19 +58,17 @@ class RestorePicker(QWidget):
         layout = QVBoxLayout(self)
 
         view_row = QHBoxLayout()
-        view_row.addWidget(QLabel("View:"))
-        self.view_mode = QComboBox()
-        self.view_mode.addItems(["Compact icons", "List"])
-        self.view_mode.setAccessibleName("Restore view mode")
-        self.view_mode.currentIndexChanged.connect(lambda index: self.set_icon_view() if index == 0 else self.set_list_view())
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(search_placeholder)
+        self.search.setAccessibleName(search_placeholder)
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_search)
+        view_row.addWidget(self.search, 1)
+        self.view_mode = view_switch("Restore view mode")
+        self.view_mode.currentChanged.connect(lambda index: self.set_icon_view() if index == 0 else self.set_list_view())
         view_row.addWidget(self.view_mode)
-        self.show_uninstalled = QCheckBox("Show data for uninstalled apps")
-        self.show_uninstalled.hide()
-        self.show_uninstalled.toggled.connect(self._render_catalog)
-        view_row.addWidget(self.show_uninstalled)
-        view_row.addStretch()
         self.select_all_button = QPushButton("Select all")
-        self.clear_selection_button = QPushButton("Clear selection")
+        self.clear_selection_button = QPushButton("Clear")
         self.select_all_button.clicked.connect(lambda: self._set_all_checked(True))
         self.clear_selection_button.clicked.connect(lambda: self._set_all_checked(False))
         view_row.addWidget(self.select_all_button)
@@ -65,6 +76,10 @@ class RestorePicker(QWidget):
         self.select_all_button.setEnabled(False)
         self.clear_selection_button.setEnabled(False)
         layout.addLayout(view_row)
+        self.show_uninstalled = QCheckBox("Show data for uninstalled apps")
+        self.show_uninstalled.hide()
+        self.show_uninstalled.toggled.connect(self._render_catalog)
+        layout.addWidget(self.show_uninstalled)
 
         self._placeholder = QWidget()
         ph_layout = QVBoxLayout(self._placeholder)
@@ -101,7 +116,7 @@ class RestorePicker(QWidget):
         restore_row = QHBoxLayout()
         self.btn_restore_safe = QPushButton("Restore safely")
         self.btn_restore_safe.clicked.connect(self.restore_checked_safe)
-        explanation = QLabel("Your current files stay unchanged. Restore safely saves a review copy in Keep-Restored.")
+        explanation = QLabel("Your current files stay unchanged. Review restore copies what you check into a new folder in Keep-Restored.")
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
         more = QPushButton("More options…")
@@ -147,27 +162,11 @@ class RestorePicker(QWidget):
         total = sum(section.count() for section in self._sections.values())
         self.select_all_button.setEnabled(total > count)
         self.clear_selection_button.setEnabled(count > 0)
-        self.selection_summary.setText(f"Selected: {count} item(s)" if count else "No items selected")
+        self.selection_summary.setText(f"{count} item{'s' if count != 1 else ''} selected" if count else "No items selected")
 
     def _apply_view_mode(self):
         for section in self._sections.values():
-            if self._icon_mode:
-                section.setViewMode(QListWidget.IconMode)
-                section.setFlow(QListWidget.LeftToRight)
-                section.setWrapping(True)
-                section.setResizeMode(QListWidget.Adjust)
-                section.setIconSize(QSize(32, 32))
-                section.setGridSize(QSize(160, max(96, self.fontMetrics().height() * 3 + 40)))
-                section.setSpacing(4)
-            else:
-                section.setViewMode(QListWidget.ListMode)
-                section.setFlow(QListWidget.TopToBottom)
-                section.setWrapping(True)
-                section.setResizeMode(QListWidget.Adjust)
-                section.setIconSize(QSize(24, 24))
-                section.setGridSize(QSize(220, max(48, self.fontMetrics().height() * 2 + 12)))  # tall enough for a 2nd (subtitle) line
-                section.setSpacing(2)
-            section.update_cell_sizes()
+            apply_tile_mode(section, self._icon_mode, self.fontMetrics())
             section.fit_height()
         self.view_mode.blockSignals(True)
         self.view_mode.setCurrentIndex(0 if self._icon_mode else 1)
@@ -226,6 +225,7 @@ class RestorePicker(QWidget):
             if child.widget():
                 child.widget().deleteLater()
         self._sections.clear()
+        self._headers.clear()
         self._catalog = []
         self.show_uninstalled.hide()
         self._update_selection_summary()
@@ -248,6 +248,7 @@ class RestorePicker(QWidget):
             if child.widget():
                 child.widget().deleteLater()
         self._sections.clear()
+        self._headers.clear()
 
         if not catalog:
             message = "No data for installed apps in this backup. Enable ‘Show data for uninstalled apps’ to view older app data." if self._catalog and self._installed_apps else "No matching data in this backup."
@@ -266,8 +267,10 @@ class RestorePicker(QWidget):
                 continue
             if show_headers:
                 header = QLabel(SECTION_HEADERS.get(category, category.replace("_", " ").title()))
-                header.setStyleSheet("font-weight: 500; margin-top: 6px;")
+                header.setObjectName("odcsGroupHeading")
+                header.setStyleSheet("padding: 6px 0 0 0;")
                 self._sections_layout.addWidget(header)
+                self._headers[category] = header
             section = self._new_section_widget()
             for entry in entries:
                 icon = QIcon.fromTheme(entry.icon, fallback)
@@ -289,7 +292,23 @@ class RestorePicker(QWidget):
             self._sections_layout.addWidget(section)
         self._sections_layout.addStretch()
         self._apply_view_mode()
+        self._apply_search()
         self._update_selection_summary()
+
+    def _apply_search(self, _text=None):
+        """Hide tiles that don't match; a section with nothing left hides too."""
+        needle = self.search.text().casefold().strip()
+        for category, section in self._sections.items():
+            shown = 0
+            for i in range(section.count()):
+                item = section.item(i)
+                haystack = f"{item.data(Qt.UserRole + 3) or item.text()} {item.data(Qt.UserRole + 4) or ''}".casefold()
+                item.setHidden(bool(needle) and needle not in haystack)
+                shown += not item.isHidden()
+            section.setVisible(shown > 0)
+            if category in self._headers:
+                self._headers[category].setVisible(shown > 0)
+            section.fit_height()
 
     def _all_items(self):
         items = []

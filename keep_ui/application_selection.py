@@ -1,9 +1,10 @@
 from pathlib import Path
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QComboBox, QPlainTextEdit, QStyle
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QStyle
 from .common import DisclosureSection
-from .checkable_list import CheckableListWidget
+from .checkable_list import CheckableListWidget, apply_tile_mode
+from .restore_picker import view_switch
 
 class ApplicationSelectionDialog(QDialog):
     """Explicit application choices with inspectable source paths."""
@@ -22,9 +23,9 @@ class ApplicationSelectionDialog(QDialog):
             self.all_data.hide()
         layout.addWidget(self.all_data)
         search = QLineEdit()
-        search.setPlaceholderText("Filter applications" if category == "applications" else "Filter system settings")
+        search.setPlaceholderText("Find an application" if category == "applications" else "Find a setting")
         search.setAccessibleName("Filter applications and settings")
-        layout.addWidget(search)
+        search.setClearButtonEnabled(True)
         self.items = CheckableListWidget()
         self.items.setObjectName("applicationChoices")
         self.items.setAccessibleName("Applications to back up")
@@ -32,16 +33,12 @@ class ApplicationSelectionDialog(QDialog):
         self.items.setResizeMode(QListWidget.Adjust)
         self.items.setIconSize(QSize(32, 32))
         self.items.setWordWrap(True)
-        self.items.setSpacing(6)
         view_row = QHBoxLayout()
-        view_row.addWidget(QLabel("View"))
-        self.view_mode = QComboBox()
-        self.view_mode.addItems(["Compact icons", "List"])
-        self.view_mode.setAccessibleName("Application view mode")
+        view_row.addWidget(search, 1)
+        self.view_mode = view_switch("Application view mode")
         view_row.addWidget(self.view_mode)
-        view_row.addStretch()
         self.select_all_button = QPushButton("Select all")
-        self.clear_selection_button = QPushButton("Clear selection")
+        self.clear_selection_button = QPushButton("Clear")
         def set_checked(checked):
             self.all_data.setChecked(False)
             for i in range(self.items.count()):
@@ -54,12 +51,8 @@ class ApplicationSelectionDialog(QDialog):
         view_row.addWidget(self.clear_selection_button)
         layout.addLayout(view_row)
         def set_mode(index):
-            self.items.setViewMode(QListWidget.IconMode if index == 0 else QListWidget.ListMode)
-            self.items.setFlow(QListWidget.LeftToRight if index == 0 else QListWidget.TopToBottom)
-            self.items.setWrapping(True)
-            self.items.setGridSize(QSize(160, max(96, self.fontMetrics().height() * 3 + 40)) if index == 0 else QSize(220, max(40, self.fontMetrics().height() + 16)))
-            self.items.update_cell_sizes()
-        self.view_mode.currentIndexChanged.connect(set_mode)
+            apply_tile_mode(self.items, index == 0, self.fontMetrics())
+        self.view_mode.currentChanged.connect(set_mode)
         set_mode(0)
         layout.addWidget(self.items, 1)
         installed = applications.InstalledApps(home)

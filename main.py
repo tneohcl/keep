@@ -15,6 +15,11 @@ from keep_ui.restore_page import RestorePage
 from keep_ui.common import DisclosureSection
 from keep_ui.restore_results import show_restore_results
 from keep_ui.application_selection import ApplicationSelectionDialog
+from keep_ui.recovery_test_dialog import RecoveryTestDialog
+from keep_ui import recovery_access
+from keep_ui.review_restore import ReviewRestoreDialog
+from keep_ui.backup_list import BackupListPanel
+import recovery_test
 import base64
 import glob
 import json
@@ -25,7 +30,9 @@ import signal
 import subprocess
 import sys
 import time
-import theming
+import theming  # also puts the bundled vendor/odcs_ui on sys.path
+from odcs_ui import timefmt as odcs_timefmt
+from odcs_ui.widgets import ViewSwitch
 from collections import namedtuple
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -37,7 +44,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QFormLayout, QPlainTextEdit, QFileSystemModel, QTreeView, QLayout,
     QComboBox, QFileDialog, QMessageBox, QAbstractItemView, QProgressDialog,
     QTabWidget, QListWidget, QListWidgetItem, QSplitter, QProgressBar,
-    QSizePolicy, QDialog, QLineEdit, QScrollArea, QFrame,
+    QSizePolicy, QDialog, QLineEdit, QScrollArea, QFrame, QStackedWidget,
     QStyledItemDelegate, QStyle, QInputDialog, QCheckBox, QMenuBar,
     QButtonGroup, QTimeEdit, QStyleOptionFocusRect, QStackedWidget, QMenu,
 )
@@ -563,8 +570,9 @@ def friendly_clock(hour, minute):
     """A clock time in the desktop's own format (QLocale), e.g. "4:00 AM" on
     en_US or "04:00" on a 24-hour locale. Every time Keep shows goes through
     here, so the schedule button and the status panel can't disagree again
-    (they showed "04:00" and "4:00 AM" side by side before 2026-09-25)."""
-    return QLocale.system().toString(QTime(hour, minute), QLocale.FormatType.ShortFormat)
+    (they showed "04:00" and "4:00 AM" side by side before 2026-09-25).
+    Delegates to the shared ODCS helper so every ODCS app formats alike."""
+    return odcs_timefmt.friendly_clock(hour, minute)
 
 
 def schedule_summary(schedule):
@@ -599,6 +607,11 @@ def friendly_datetime(dt):
     if d.year == today.year:
         return f"{dt.strftime('%b')} {dt.day} at {time_str}"
     return f"{dt.strftime('%b')} {dt.day}, {dt.year} at {time_str}"
+
+
+def new_restore_folder():
+    """A fresh, clearly-labelled folder for restored copies - never a live path."""
+    return os.path.join(HOME, "Keep-Restored", datetime.now().strftime("%Y%m%d-%H%M%S"))
 
 
 def friendly_timestamp(iso_string):
@@ -994,9 +1007,9 @@ class ItemPicker(RestorePicker):
         else:
             shutil.copy2(src, dest)
 
-    def restore_checked_safe(self):
+    def restore_checked_safe(self, dest_dir=None):
         """No destination picker needed - lands in a clearly-labelled, always-new
-        review folder. Never touches the live path, so there's nothing to
+        review folder (or the folder Review restore… was pointed at). Never touches the live path, so there's nothing to
         confirm and nothing that can be lost by picking the wrong archive."""
         app_logging.record("operation.requested", operation="safe_restore")
         checked = self._checked_items()
@@ -1014,8 +1027,7 @@ class ItemPicker(RestorePicker):
         if not self._ensure_mounted_cb():
             QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
             return
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        dest_dir = os.path.join(HOME, "Keep-Restored", stamp)
+        dest_dir = dest_dir or new_restore_folder()
         done, failed = [], []
         for identity, rel_path, live_target in entries:
             src = f"{MOUNTPOINT}/{rel_path}"
@@ -2370,11 +2382,11 @@ class HelpDialog(QDialog):
              "file browser into the mounted archive, for anything that "
              "isn't in either curated list."),
             ("Restoring: Safe vs Direct",
-             "\"Restore safely\" copies files to "
+             "\"Review restore…\" (Ctrl+R) shows what you checked and copies it to "
              "~/Keep-Restored/<timestamp>/ without touching anything live - "
              "always safe to try, and the normal way to look at an older "
-             "version of something.\n\n"
-             "\"Restore directly…\" overwrites the real, live files. "
+             "version of something. Change folder… picks another destination.\n\n"
+             "More options ▸ \"Restore to original location…\" overwrites the real, live files. "
              "Keep automatically saves whatever was there first to "
              "~/Keep-Restored/Before-Direct-Restore/<timestamp>/ before it "
              "does, so it can be undone by hand if needed - but treat it as "
@@ -2703,6 +2715,8 @@ class MainWindow(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
         self.menu_bar = QMenuBar(self)
         backup_menu = self.menu_bar.addMenu("Backup")
         self.action_back_up_now = backup_menu.addAction("Back up now", self.start_backup)
@@ -2712,8 +2726,13 @@ class MainWindow(QWidget):
         self.action_change_destination = backup_menu.addAction("Change destination…", self.change_backup_destination)
         self.action_edit_excludes = backup_menu.addAction("Edit backup excludes…", self.edit_excludes)
         self.action_back_up_now.setShortcut(QKeySequence("Ctrl+B"))
+        self.action_review_restore = backup_menu.addAction("Review restore…", self.review_restore)
+        self.action_review_restore.setShortcut(QKeySequence("Ctrl+R"))
         self.action_backup_sources.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.action_schedule.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        backup_menu.addSeparator()
+        self.action_recovery_access = backup_menu.addAction("Recovery access…", self.show_recovery_access)
+        self.action_test_recovery = backup_menu.addAction("Test recovery…", self.test_recovery)
         backup_menu.addSeparator()
         self.action_exit = backup_menu.addAction("Exit", self.close)
         self.action_exit.setMenuRole(QAction.QuitRole)
@@ -2744,6 +2763,7 @@ class MainWindow(QWidget):
 
         self.backup_panel = BackupPanel(self)
         self.status_page = StatusPage()
+        self.status_page.recoveryTestRequested.connect(self.test_recovery)
         self.restore_page = RestorePage(self, CONFIG, MOUNTPOINT, HOME_IN_ARCHIVE, ItemPicker)
         # Existing application handlers use these stable widget references. Views
         # own their construction; no view imports main or executes backend work.
@@ -2751,11 +2771,40 @@ class MainWindow(QWidget):
             for name in view.CONTROL_NAMES:
                 setattr(self, name, getattr(view, name))
         self.restore_surface = self.restore_page
-        self.pages = QTabWidget()
-        self.pages.setObjectName("workspaceTabs")
-        self.pages.tabBar().setDrawBase(False)
-        self.pages.addTab(self.status_page, "Status")
-        self.pages.addTab(self.restore_page, "Restore")
+        # The toolbar's Review restore… replaces the per-tab restore buttons.
+        self.btn_restore.hide()
+        for picker in (self.apps_picker, self.folders_picker):
+            picker.btn_restore_safe.hide()
+        # ODCS window model: toolbar (view switch, primary action trailing)
+        # over a sidebar + content split. A stacked widget replaces the old
+        # tab widget; the ViewSwitch in the toolbar drives it.
+        self.pages = QStackedWidget()
+        self.pages.setObjectName("keepContent")
+        self.pages.addWidget(self.status_page)
+        self.pages.addWidget(self.restore_page)
+        self.view_switch = ViewSwitch(["Status", "Restore"], accessible_name="Keep view")
+        self.view_switch.currentChanged.connect(self.pages.setCurrentIndex)
+        self.pages.currentChanged.connect(self.view_switch.setCurrentIndex)
+        self.pages.currentChanged.connect(self._update_primary_action)
+        toolbar = QWidget()
+        toolbar.setObjectName("keepToolbar")
+        toolbar.setAttribute(Qt.WA_StyledBackground, True)
+        bar = QHBoxLayout(toolbar)
+        bar.setContentsMargins(16, 8, 16, 8)
+        bar.setSpacing(8)
+        app_title = QLabel("Keep")
+        app_title.setObjectName("keepAppTitle")
+        app_title.setFixedWidth(284)
+        bar.addWidget(app_title)
+        bar.addWidget(self.view_switch)
+        bar.addStretch(1)
+        # Restore view's task: one review step for every tab, always into a new folder.
+        self.btn_review_restore = QPushButton("Review restore…")
+        self.btn_review_restore.clicked.connect(self.review_restore)
+        self.btn_review_restore.hide()
+        for widget in (self.btn_stop, self.btn_backup, self.btn_review_restore):
+            bar.addWidget(widget)
+        root.addWidget(toolbar)
         for index in (0, 1):
             action = QAction(self)
             action.setShortcut(QKeySequence(f"Ctrl+{index + 1}"))
@@ -2766,8 +2815,18 @@ class MainWindow(QWidget):
         self.log_section.toggle.toggled.connect(self.action_show_log.setChecked)
         self.pages.currentChanged.connect(self._on_workspace_changed)
         body = QHBoxLayout()
-        body.setSpacing(24)
-        body.addWidget(self.backup_panel)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        # Status shows the backup settings; Restore shows the stored backups.
+        self.backup_list_panel = BackupListPanel()
+        self.backup_list_panel.chosen.connect(self.archive_combo.setCurrentIndex)
+        self.archive_combo.currentIndexChanged.connect(self._on_archive_selection_shown)
+        self.sidebar_stack = QStackedWidget()
+        self.sidebar_stack.setFixedWidth(300)
+        self.sidebar_stack.addWidget(self.backup_panel)
+        self.sidebar_stack.addWidget(self.backup_list_panel)
+        self.pages.currentChanged.connect(self.sidebar_stack.setCurrentIndex)
+        body.addWidget(self.sidebar_stack)
         body.addWidget(self.pages, 1)
         root.addLayout(body, 1)
         self._refresh_setup_labels()
@@ -2779,9 +2838,17 @@ class MainWindow(QWidget):
         save_config()
         self._apply_theme_dependent_styling()
 
+    def _update_primary_action(self, index=None):
+        """The strongest accent marks the current view's task: Back up now on
+        Status, Review restore… on Restore (DESIGN.md principle 4)."""
+        index = self.pages.currentIndex() if index is None else index
+        theming.role(self.btn_backup, "primary" if index == 0 else "")
+        theming.role(self.btn_review_restore, "primary" if index == 1 else "")
+        self.btn_review_restore.setVisible(index == 1)
+
     def _apply_theme_dependent_styling(self):
         theming.install(QApplication.instance(), CONFIG.get("theme", "system"))
-        theming.role(self.btn_backup, "primary")
+        self._update_primary_action()
         theming.role(self.lbl_progress_detail, "secondary")
         theming.role(self.lbl_delete_status, "secondary")
 
@@ -2907,6 +2974,8 @@ class MainWindow(QWidget):
         self.action_change_destination.setEnabled(enabled)
         self.action_edit_excludes.setEnabled(enabled)
         self.btn_compare_archives.setEnabled(enabled)
+        self.btn_test_recovery.setEnabled(enabled)
+        self.action_test_recovery.setEnabled(enabled)
 
     # --- status ---
 
@@ -2953,13 +3022,20 @@ class MainWindow(QWidget):
         sources = _consumer_module.backup_source_entries(CONFIG)
         labels = [entry["label"] for entry in sources]
         description = (f"{len(labels)} folder" + ("s" if len(labels) != 1 else "")) if labels else "No folders selected"
-        self.source_choice.setText(description + "…")
+        self.source_choice.setValue(description)
         self.source_choice.setToolTip("\n".join(labels))
         destination = CONFIG.get("destination", {})
         label = destination.get("label") or "Choose backup location"
-        self.destination_choice.setText(self.destination_choice.fontMetrics().elidedText(label, Qt.ElideRight, 215) + "…")
+        self._show_destination_row(label, getattr(self, "_destination_available", None))
         self.destination_choice.setToolTip(label)
         if hasattr(self, "apps_choice"):
+            import applications
+            try:
+                pending = applications.unreviewed(CONFIG, applications.catalog(CONFIG, include_unrecognized=True))
+            except OSError:
+                pending = []
+            new_apps = [entry["label"] for entry in pending if entry["category"] == "applications"]
+            new_settings = [entry["label"] for entry in pending if entry["category"] != "applications"]
             if not CONFIG.get("include_app_data", True):
                 summary = "None selected"
             elif CONFIG.get("app_selection_mode", "all") == "selected":
@@ -2968,16 +3044,39 @@ class MainWindow(QWidget):
                 summary = f"{len(selection - system_ids)} selected"
             else:
                 summary = "All application data"
-            self.apps_choice.setText(summary + "…")
+            self._set_choice_with_review(self.apps_choice, summary, new_apps)
             if not CONFIG.get("include_app_data", True):
                 settings_summary = "None selected"
             elif CONFIG.get("app_selection_mode", "all") == "all":
                 settings_summary = "All curated settings"
             else:
                 settings_summary = f"{len(selection & system_ids)} selected"
-            self.settings_choice.setText(settings_summary + "…")
+            self._set_choice_with_review(self.settings_choice, settings_summary, new_settings)
             schedule = CONFIG.get("schedule", {})
-            self.schedule_button.setText((schedule_summary(schedule) if schedule.get("enabled") else "Automatic backups off") + "…")
+            self.schedule_button.setValue(schedule_summary(schedule) if schedule.get("enabled") else "Off")
+
+    def _show_destination_row(self, label, available):
+        """Sidebar Destination row: the name, and once known the live state
+        as a dot plus words (wraps; never elided, DESIGN.md Resilience)."""
+        if not CONFIG.get("destination", {}).get("label"):
+            self.destination_choice.setValue(label)  # "Choose backup location"
+        elif available is None:
+            self.destination_choice.setValue(label)
+        elif available:
+            self.destination_choice.setValue(f"{label} · Connected", indicator="ok")
+        else:
+            self.destination_choice.setValue(f"{label} · Not connected", "error", indicator="error")
+
+    @staticmethod
+    def _set_choice_with_review(row, summary, unreviewed_labels):
+        """App data that appeared after the last choice isn't backed up in
+        "selected" mode; say so on the row instead of skipping it silently."""
+        if unreviewed_labels:
+            row.setValue(f"{summary} · {len(unreviewed_labels)} to review", "warning")
+            row.setToolTip("Not backed up yet, and not reviewed: " + ", ".join(sorted(unreviewed_labels)))
+        else:
+            row.setValue(summary)
+            row.setToolTip("")
 
     def configure_applications(self, category="applications"):
         if self._repo_op_running:
@@ -2998,6 +3097,11 @@ class MainWindow(QWidget):
             previous.update(entry["id"] for entry in entries)
         other = [entry["id"] for entry in entries if entry["category"] != category and entry["id"] in previous]
         candidate["selected_applications"] = dialog.selection() + other
+        # Everything the person just saw in this category now counts as
+        # decided; app data that appears later is flagged "to review".
+        candidate["known_applications"] = sorted(
+            set(CONFIG.get("known_applications", []))
+            | {entry["id"] for entry in entries if entry["category"] == category})
         conflict = applications.selection_conflict(candidate, [e["path"] for e in _consumer_module.backup_source_entries(candidate)])
         if conflict:
             QMessageBox.warning(self, "Overlapping backup folders", f"The folder {conflict} includes application data directly. Remove that broad folder in Choose Folders before choosing individual apps. Your selection was not changed.")
@@ -3007,7 +3111,9 @@ class MainWindow(QWidget):
         self._refresh_setup_labels()
 
     def _refresh_activity(self):
-        entries = _consumer_module.recent_activity(LOGDIR)
+        repo, info, _count, _when = getattr(self, "_verified_repo_info", (None, None, None, None))
+        repo_id = ((info or {}).get("repository") or {}).get("id") if repo == REPO else None
+        entries = _consumer_module.recent_activity(LOGDIR, REPO, repo_id)
         for index, (timestamp, outcome) in enumerate(self.activity_rows):
             visible = index < len(entries) or index == 0
             timestamp.setVisible(visible)
@@ -3020,6 +3126,86 @@ class MainWindow(QWidget):
                 timestamp.setText("No activity yet")
                 outcome.setText("Your backup results will appear here.")
 
+    def _refresh_facts(self, dest):
+        """Backup completed / Integrity checked / Recovery tested, each with its
+        own result and date, from the same sources as the Details rows."""
+        facts = self.status_facts
+        verdict, ts = last_backup_attempt_status()
+        state, description = {
+            "ok": ("ok", "Your selected files were saved"),
+            "warning": ("warning", "Finished with warnings. Show the log for details."),
+            "stopped": ("warning", "The last backup was stopped before it finished"),
+            "FAILED": ("error", "The last backup didn't finish. Show the log for details."),
+        }.get(verdict, ("never", "Your selected files were saved"))
+        facts.setFact("backup", state, friendly_timestamp(ts) if ts else "", description)
+
+        checks = []
+        for prefix in ("check", "check-verify-data"):
+            outcome, when = log_verdict(prefix, ["completed successfully in", "Repository check complete"], ["FAILED"])
+            if when:
+                checks.append((outcome, when))
+        health_path = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "keep/last-check.json"
+        try:
+            health = json.loads(health_path.read_text(encoding="utf-8"))
+            if health.get("repository") == dest.get("repo") and (health.get("finished") or health.get("started")):
+                checks.append((health.get("result", "unknown"), health.get("finished") or health.get("started")))
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+
+        def moment(item):
+            try:
+                return datetime.fromisoformat(item[1]).astimezone().timestamp()
+            except (TypeError, ValueError):
+                return 0
+
+        if checks:
+            outcome, when = max(checks, key=moment)
+            state, description = {
+                "ok": ("ok", "Stored data is readable and consistent"),
+                "success": ("ok", "Stored data is readable and consistent"),
+                "running": ("info", "An integrity check is running now"),
+                "FAILED": ("error", "The last check found a problem. Show the log for details."),
+                "failed": ("error", "The last check found a problem. Show the log for details."),
+            }.get(outcome, ("warning", "The last check didn't finish cleanly"))
+            facts.setFact("check", state, friendly_timestamp(when), description)
+        else:
+            facts.setFact("check", "never", "", "Stored data is readable and consistent")
+
+        record = recovery_test.load()
+        state, when, advice = recovery_test.status(record, dest.get("repo"))
+        facts.setFact("recovery", state, friendly_timestamp(when) if when else "", advice)
+        self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo")))
+        if state != "never":
+            self.lbl_restore_test.setText(f"{record.get('result')} ({friendly_timestamp(when)})")
+            theming.role(self.lbl_restore_test, "error" if state == "error" else "")
+
+    def show_recovery_access(self):
+        dest = refresh_destination()
+        repo, info, archive_count, verified = getattr(self, "_verified_repo_info", (None, None, None, None))
+        if repo != dest.get("repo"):
+            info, archive_count, verified = None, None, None
+        dialog = recovery_access.RecoveryAccessDialog(
+            dest.get("repo"), dest, info if dest["available"] else None, archive_count,
+            friendly_timestamp(verified) if verified else None, borg_env, self.test_recovery, self)
+        dialog.changed.connect(lambda: self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"))))
+        dialog.exec()
+
+    def test_recovery(self):
+        """Prove a file comes back using only the typed passphrase (recovery_test.py)."""
+        if self._repo_op_running:
+            QMessageBox.information(self, "Keep", "Wait for the current backup or delete to finish, then test recovery.")
+            return
+        dest = refresh_destination()
+        if not dest["available"] or not dest.get("repo"):
+            QMessageBox.information(self, "Keep", f"Connect {dest.get('label') or 'your backup destination'} first, then test recovery.")
+            return
+        if not self._unmount():
+            QMessageBox.warning(self, "Keep", "Close the archive you're browsing, then test recovery.")
+            return
+        dialog = RecoveryTestDialog(dest["repo"], self)
+        dialog.recorded.connect(lambda _record: self.refresh_status())
+        dialog.exec()
+
     def refresh_status(self, select_latest_archive=False):
         self._refresh_setup_labels()
         self._refresh_activity()
@@ -3030,6 +3216,8 @@ class MainWindow(QWidget):
         self.lbl_dest.setText(dest_fm.elidedText(dest_path_text, Qt.ElideMiddle, self.lbl_dest.width() or 220))
         self.lbl_dest.setToolTip(dest_path_text)
         dest_status_fm = self.lbl_dest_status.fontMetrics()
+        self._destination_available = bool(dest["available"])
+        self._show_destination_row(CONFIG.get("destination", {}).get("label") or dest["label"], self._destination_available)
         if dest["available"]:
             dest_status_text = f"{dest['label']} ({type_label}) — connected"
             self.lbl_dest_status.setText(dest_status_fm.elidedText(dest_status_text, Qt.ElideRight, self.lbl_dest_status.width() or 220))
@@ -3093,7 +3281,7 @@ class MainWindow(QWidget):
                 theming.role(label, "error" if outcome in ("failed", "cancelled", "warning") else "")
         except (OSError, ValueError, TypeError):
             pass
-
+        self._refresh_facts(dest)
 
         if not dest["available"]:
             self.lbl_repo.setText("unavailable")
@@ -3175,6 +3363,10 @@ class MainWindow(QWidget):
             # changed the destination already triggered its own fresh
             # refresh_status() call, so just drop this one.
             return
+        # Recovery access shows these as "Verified by Keep" facts.
+        self._verified_repo_info = (queried_repo, info, len(listing.get("archives", [])) if listing else None,
+                                    datetime.now().astimezone().isoformat(timespec="seconds"))
+        self._refresh_activity()  # now that the repository ID is known
         if info:
             stats = info.get("cache", {}).get("stats", {})
             size_gb = stats.get("unique_csize", 0) / (1024**3)
@@ -3211,6 +3403,7 @@ class MainWindow(QWidget):
         disruptive)."""
         previously_selected = self.archive_combo.currentText()
         names = [a["name"] for a in reversed(listing.get("archives", []))] if listing else []
+        self._archive_times = {a["name"]: a.get("start") or a.get("time") for a in (listing or {}).get("archives", [])}
         self.archive_combo.blockSignals(True)
         self.archive_combo.clear()
         for n in names:
@@ -3221,6 +3414,8 @@ class MainWindow(QWidget):
             else:
                 self.archive_combo.setCurrentText(previously_selected)
         self.archive_combo.blockSignals(False)
+        if hasattr(self, "backup_list_panel"):  # test stand-ins borrow this method without the sidebar
+            MainWindow._refresh_backup_list(self)
         if self.mounted_archive and self.mounted_archive not in names:
             self._unmount()  # the mounted archive was deleted from under us
         if names and not previously_selected and self.pages.currentIndex() == 1:
@@ -4259,7 +4454,60 @@ class MainWindow(QWidget):
         self.fs_model.setRootPath(path)
         self.tree.setRootIndex(self.fs_model.index(path))
 
-    def restore_selected(self):
+    def friendly_archive(self, name):
+        """'Today at 8:51 AM' for an archive; its Borg name if the time is unknown."""
+        when = getattr(self, "_archive_times", {}).get(name)
+        return friendly_timestamp(when) if when else name
+
+    def _refresh_backup_list(self):
+        destination = CONFIG.get("destination", {}).get("label") or "Backup"
+        rows = []
+        for i in range(self.archive_combo.count()):
+            name = self.archive_combo.itemText(i)
+            rows.append((self.friendly_archive(name), destination + (" · newest" if i == 0 else ""), name))
+        self.backup_list_panel.set_backups(rows, self.archive_combo.currentIndex())
+        retention = CONFIG.get("retention", {})
+        self.backup_list_panel.set_caption(
+            f"{len(rows)} backup{'s' if len(rows) != 1 else ''} stored. Up to "
+            f"{retention.get('daily', 7)} daily, {retention.get('weekly', 4)} weekly and "
+            f"{retention.get('monthly', 6)} monthly backups are kept." if rows else "")
+        self._on_archive_selection_shown()
+
+    def _on_archive_selection_shown(self, _index=None):
+        index = self.archive_combo.currentIndex()
+        self.backup_list_panel.select_row(index)
+        name = self.archive_combo.currentText()
+        destination = CONFIG.get("destination", {}).get("label") or "your backup"
+        self.archive_friendly.setText(
+            f"Restoring from <b>{self.friendly_archive(name)}</b> · {destination}" if name
+            else "Choose a backup in the list on the left.")
+
+    def review_restore(self):
+        """Toolbar primary on the Restore view: gather what the current tab has
+        checked or selected, show exactly what goes where, then restore into a
+        new Keep-Restored folder (or one the person picks)."""
+        self.pages.setCurrentIndex(1)
+        tab = self.tabs.currentIndex()
+        picker = {0: self.apps_picker, 1: self.folders_picker}.get(tab)
+        if picker is not None:
+            names = [item.text() for item in picker._all_items()]
+        else:
+            names = [os.path.basename(self.fs_model.filePath(index)) or self.fs_model.filePath(index)
+                     for index in self.tree.selectionModel().selectedRows()]
+        if not names:
+            QMessageBox.information(self, "Keep", "Check the items you want to restore first." if picker is not None
+                                    else "Select one or more files or folders first (Ctrl+click or Shift+click for several).")
+            return
+        archive = self.friendly_archive(self.archive_combo.currentText()) if self.archive_combo.currentText() else "this backup"
+        dialog = ReviewRestoreDialog(names, archive, new_restore_folder(), HOME, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        if picker is not None:
+            picker.restore_checked_safe(dest_dir=dialog.destination)
+        else:
+            self.restore_selected(dest_dir=dialog.destination)
+
+    def restore_selected(self, dest_dir=None):
         app_logging.record("operation.requested", operation="file_restore")
         rows = self.tree.selectionModel().selectedRows()
         if not rows:
@@ -4283,7 +4531,8 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
             return
         sources = [f"{MOUNTPOINT}/{rel_path}" for rel_path in rel_paths]
-        dest_dir = QFileDialog.getExistingDirectory(self, f"Restore {len(sources)} item(s) to folder (a copy, not the live location)")
+        if not dest_dir:  # also False when called straight from a button's clicked(bool)
+            dest_dir = QFileDialog.getExistingDirectory(self, f"Restore {len(sources)} item(s) to folder (a copy, not the live location)")
         if not dest_dir:
             return
         done, failed = [], []

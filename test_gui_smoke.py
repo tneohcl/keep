@@ -189,7 +189,98 @@ with tempfile.TemporaryDirectory() as directory:
         with patch.object(main.subprocess, "run", side_effect=failure):
             ok, message = window._attempt_mount("fixture")
             assert not ok and message
-    assert isinstance(window.pages, main.QTabWidget)
+    assert isinstance(window.pages, main.QStackedWidget)
+    assert window.pages.count() == 2 and window.view_switch.currentIndex() == 0
+    window.view_switch.setCurrentIndex(1)
+    assert window.pages.currentIndex() == 1
+    assert window.btn_review_restore.property("role") == "primary" and window.btn_backup.property("role") != "primary"
+    assert not window.btn_review_restore.isHidden() and window.btn_restore.isHidden()
+    # Review restore always defaults to a new Keep-Restored folder and says so.
+    from keep_ui.review_restore import ReviewRestoreDialog, display_path
+    review = ReviewRestoreDialog([f"item {n}" for n in range(12)], "Today at 8:51 AM", main.new_restore_folder(), main.HOME, window)
+    assert "Keep-Restored" in review.destination and review.destination_label.text().startswith("~/Keep-Restored/")
+    assert review.restore_button.isDefault() and review.restore_button.property("role") == "primary"
+    assert display_path("/elsewhere/x", "/home/me") == "/elsewhere/x"
+    review.deleteLater()
+    window.view_switch.setCurrentIndex(0)
+    assert window.btn_backup.property("role") == "primary" and window.btn_review_restore.isHidden()
+    # Three separate facts; an untested recovery says so and offers the test.
+    assert list(window.status_facts.facts) == ["backup", "check", "recovery"]
+    assert window.status_facts.whenText("recovery") == window.status_facts.NEVER
+    assert window.btn_test_recovery.text() == "Test recovery…"
+    assert window.action_test_recovery.text() == "Test recovery…"
+    from keep_ui.recovery_test_dialog import RecoveryTestDialog
+    dialog = RecoveryTestDialog("/nonexistent/repo", window)
+    assert dialog.passphrase.echoMode() == main.QLineEdit.Password
+    assert not dialog.start_button.isEnabled()
+    dialog.passphrase.setText("typed")
+    assert dialog.start_button.isEnabled() and dialog.start_button.property("role") == "primary"
+    dialog.deleteLater()
+    # Restore sidebar: stored backups by friendly name drive the (hidden) archive model.
+    # (mounting is patched throughout: these archives exist only in this test.)
+    with patch.object(window, "ensure_mounted", return_value=True), patch.object(window, "_load_visible_archive", lambda *a, **k: None):
+        window._apply_archive_listing({"archives": [
+            {"name": "keep-host-2026-09-24_040000", "time": "2026-09-24T04:00:00.000000"},
+            {"name": "keep-host-2026-09-25_085149", "time": "2026-09-25T08:51:49.000000"}]}, select_latest=True)
+        panel = window.backup_list_panel
+        assert panel.list.count() == 2 and window.archive_combo.isHidden()
+        assert "newest" in panel.list.item(0).data(main.Qt.UserRole + 1)
+        assert "keep-host" not in panel.list.item(0).text()
+        panel.list.setCurrentRow(1)
+        assert window.archive_combo.currentText() == "keep-host-2026-09-24_040000"
+        assert window.friendly_archive("keep-host-2026-09-24_040000") in window.archive_friendly.text()
+        window.archive_combo.setCurrentIndex(0)
+        assert panel.list.currentRow() == 0
+        window.view_switch.setCurrentIndex(1)
+        assert window.sidebar_stack.currentWidget() is window.backup_list_panel
+        window.view_switch.setCurrentIndex(0)
+        assert window.sidebar_stack.currentWidget() is window.backup_panel
+        # Search hides tiles (and empty sections); a click anywhere on a tile toggles it once.
+        picker = window.apps_picker
+        picker._installed_apps_provider = None  # don't depend on what this machine has installed
+        picker.populate([main.CatalogEntry("Firefox", None, [("f", "/f")], "firefox", "applications"),
+                     main.CatalogEntry("Krita", None, [("k", "/k")], "krita", "applications")])
+        section = picker._sections["applications"]
+        picker.search.setText("fire")
+        assert [section.item(i).isHidden() for i in range(section.count())] == [False, True]
+        picker.search.setText("")
+        from PySide6.QtCore import QPoint, QPointF, QEvent
+        from PySide6.QtGui import QMouseEvent
+
+        def click(widget, pos):  # QtTest isn't in Debian's PySide6 packages
+            for kind in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease):
+                event = QMouseEvent(kind, QPointF(pos), QPointF(widget.mapToGlobal(pos)),
+                                    main.Qt.LeftButton, main.Qt.LeftButton if kind == QEvent.MouseButtonPress else main.Qt.NoButton,
+                                    main.Qt.NoModifier)
+                QApplication.sendEvent(widget, event)
+        window.resize(1200, 800)
+        window.show()
+        window.view_switch.setCurrentIndex(1)
+        app.processEvents()
+        rect = section.visualItemRect(section.item(0))
+        click(section.viewport(), rect.center())
+        assert section.item(0).checkState() == main.Qt.Checked
+        click(section.viewport(), rect.topLeft() + QPoint(18, rect.height() // 2))
+        assert section.item(0).checkState() == main.Qt.Unchecked  # the drawn checkbox: exactly one toggle
+        window.view_switch.setCurrentIndex(0)
+        window.hide()
+    # Recovery access: verified facts apart from dated personal confirmations.
+    from keep_ui import recovery_access
+    import recovery_test
+    window._refresh_facts({"repo": "/fixture/repo"})
+    assert window.recovery_access_row.value() == "Not yet tested"
+    access = recovery_access.RecoveryAccessDialog(
+        "/fixture/repo", {"available": True, "label": "TITAN-i", "type": "network"},
+        {"encryption": {"mode": "repokey-blake2"}}, 2, "Today at 9:00 AM", main.borg_env, lambda: None, window)
+    assert access.export_button.isEnabled() and access.test_button.property("role") == "primary"
+    assert "sign in to TITAN-i" in access.confirm_boxes["destination_access"].text()
+    access.confirm_boxes["passphrase_saved"].setChecked(True)
+    assert recovery_test.confirmation(recovery_test.load_access("/fixture/repo"), "passphrase_saved")[0] == "confirmed"
+    access.confirm_boxes["passphrase_saved"].setChecked(False)
+    assert recovery_test.load_access("/fixture/repo") == {}
+    assert recovery_access.encryption_fact({"encryption": {"mode": "keyfile-blake2"}})[0] == "warning"
+    assert recovery_access.encryption_fact(None)[0] == "never"
+    access.deleteLater()
     picker = window.apps_picker
     picker._installed_apps_provider = lambda: SimpleNamespace(contains=lambda *ids: "Firefox" in ids)
     picker.populate([main.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications")])
@@ -299,12 +390,15 @@ with tempfile.TemporaryDirectory() as directory:
     dialog.select_all_button.click()
     assert not dialog.all_data.isChecked()
     assert dialog.selection() == ["firefox"]
-    assert dialog.items.viewMode() == main.QListWidget.IconMode
+    # Tiles: checkbox inside the tile next to icon + name (CheckTileDelegate).
+    from keep_ui.checkable_list import CheckTileDelegate
+    assert isinstance(dialog.items.itemDelegate(), CheckTileDelegate) and dialog.items.itemDelegate().framed
+    assert dialog.items.gridSize().width() == 210
     assert not dialog.items.item(0).icon().isNull()
     dialog.view_mode.setCurrentIndex(1)
-    assert dialog.items.viewMode() == main.QListWidget.ListMode
+    assert not dialog.items.itemDelegate().framed
     assert dialog.items.isWrapping()
-    assert dialog.items.gridSize().width() == 220
+    assert dialog.items.gridSize().width() == 280
     assert dialog.selection() == ["firefox"]
     dialog.view_mode.setCurrentIndex(0)
     dialog.items.setCurrentRow(0)

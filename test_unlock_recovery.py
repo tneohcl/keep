@@ -2104,8 +2104,8 @@ if win_hh is not None:
           win_hh.btn_stop.isHidden())
     check("Phase HH: btn_refresh does not expand (small/tertiary, unlike Backup Now)",
           not hasattr(win_hh, "btn_refresh"))
-    check("Phase HH: btn_backup still expands (stays primary)",
-          win_hh.btn_backup.sizePolicy().horizontalPolicy() == QSizePolicy.Expanding)
+    check("Phase HH: btn_backup is the Status view's primary action",
+          win_hh.btn_backup.property("role") == "primary")
 
     # Drive a real start_backup() -> finished cycle to prove Stop's
     # visibility is wired to the real backup lifecycle, not just correct at
@@ -2828,7 +2828,7 @@ qq_help_text = " ".join(lbl.text() for lbl in qq_help.findChildren(main.QLabel) 
 check("Phase QQ: HelpDialog no longer says the old 'Restore Picked (safe...)' label",
       "Restore Picked" not in qq_help_text, qq_help_text[:200])
 check("Phase QQ: HelpDialog references the actual current button labels instead",
-      "Restore safely" in qq_help_text and "Restore directly" in qq_help_text)
+      "Review restore" in qq_help_text and "Restore to original location" in qq_help_text, qq_help_text[:400])
 check("Phase QQ: HelpDialog's 'Around the app' section mentions the current Details/Activity structure, not just the old flat list",
       "Details" in qq_help_text)
 qq_help.close()

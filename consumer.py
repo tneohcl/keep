@@ -84,13 +84,37 @@ def support_summary(text: str) -> str:
     return "\n".join(result) or "No completed backup summary is available."
 
 
-def recent_activity(log_dir: str) -> list[tuple[str, str]]:
-    """Read bounded tails of the three newest run logs, without exposing paths."""
+def _log_repository(head: str) -> tuple[str | None, str | None]:
+    """(path, Borg repository ID) from a run log's header, when recorded."""
+    path = repo_id = None
+    for line in head.splitlines():
+        _, _, rest = line.partition(" ")
+        if rest.startswith("Repository: "):
+            path = rest[len("Repository: "):].strip()
+        elif rest.startswith("Repository ID: "):
+            repo_id = rest[len("Repository ID: "):].strip()
+    return path, repo_id
+
+
+def recent_activity(log_dir: str, repository: str | None = None,
+                    repository_id: str | None = None) -> list[tuple[str, str]]:
+    """Read bounded tails of the three newest run logs for this destination,
+    without exposing paths. A log that recorded a Borg repository ID must
+    match `repository_id` (a re-created repository at the same path is a
+    different backup); otherwise its recorded path must match `repository`."""
     result = []
-    paths = sorted(Path(log_dir).glob("backup-*.log"), reverse=True)[:3]
-    for path in paths:
+    for path in sorted(Path(log_dir).glob("backup-*.log"), reverse=True):
+        if len(result) == 3:
+            break
         try:
             with path.open("rb") as stream:
+                head = stream.read(16384).decode("utf-8", errors="replace")
+                logged_path, logged_id = _log_repository(head)
+                if repository_id and logged_id and logged_id != repository_id:
+                    continue
+                if repository and logged_path and logged_path != repository:
+                    continue
+                stream.seek(0)
                 first = stream.readline(512).decode("utf-8", errors="replace").split()
                 stream.seek(max(0, path.stat().st_size - 65536))
                 tail = stream.read(65536).decode("utf-8", errors="replace")
