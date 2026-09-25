@@ -101,7 +101,7 @@ class RestorePicker(QWidget):
         restore_row = QHBoxLayout()
         self.btn_restore_safe = QPushButton("Restore safely")
         self.btn_restore_safe.clicked.connect(self.restore_checked_safe)
-        explanation = QLabel("Your current files stay unchanged. Restore safely saves a review copy in Keep-Restored.")
+        explanation = QLabel("Your current files stay unchanged. Review restore copies what you check into a new folder in Keep-Restored.")
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
         more = QPushButton("More options…")

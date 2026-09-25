@@ -15,7 +15,7 @@ The product model is intentionally simple:
 - **When** — manual **Back Up Now** and an optional systemd-backed daily/weekly schedule controlled from Keep.
 - **Protection** — new repositories can be encrypted (recommended) or deliberately created without encryption.
 
-The restore side keeps Keep's original safety model: **Restore Safely** lands in a review folder, **Restore Directly…** has explicit overwrite confirmation and a pre-restore copy, and **Advanced** remains a raw archive browser for anything the friendly catalogs do not expose.
+The restore side keeps Keep's original safety model: **Review restore…** (the Restore view's toolbar action) shows what will be written and lands it in a new review folder, **Restore to original location…** has explicit overwrite confirmation and a pre-restore copy, and **Advanced** remains a raw archive browser for anything the friendly catalogs do not expose.
 
 ## Consumer setup
 
@@ -146,7 +146,7 @@ A **Help** menu in the top-left covers the same ground as this file, in-app: wha
 
 ## Restore, two speeds
 
-- **Restore Safely** — no destination picker, no confirmation needed: lands in a fresh timestamped folder under `~/Keep-Restored/`, alongside a note of where each item's real live path would be. Never touches anything live.
+- **Review restore…** (toolbar, Ctrl+R) — lists what you checked or selected, then lands it in a fresh timestamped folder under `~/Keep-Restored/` (or a folder you pick with Change folder…), alongside a note of where each item's real live path would be. Never touches anything live.
 - **Restore Directly…** — auto-targets the real live path and writes there, after a confirmation listing exactly what gets overwritten. Whatever was there gets copied to `~/Keep-Restored/Before-Direct-Restore/<timestamp>/` first, so there's a local undo path — but the app itself won't know its files changed underneath it, and if it's still running it may rewrite them itself on exit (Keep warns if it detects that).
 
 ## Unlocking a backup that won't open

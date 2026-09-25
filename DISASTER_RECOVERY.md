@@ -79,4 +79,4 @@ Borg recreates the archived absolute paths without their leading `/` beneath the
 unset BORG_PASSPHRASE
 ```
 
-Keep's **Restore Safely** workflow follows the same principle: restore to a review location first, then decide what should replace live data.
+Keep's **Review restore…** workflow follows the same principle: restore to a review location first, then decide what should replace live data.

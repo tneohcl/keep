@@ -17,6 +17,7 @@ from keep_ui.restore_results import show_restore_results
 from keep_ui.application_selection import ApplicationSelectionDialog
 from keep_ui.recovery_test_dialog import RecoveryTestDialog
 from keep_ui import recovery_access
+from keep_ui.review_restore import ReviewRestoreDialog
 import recovery_test
 import base64
 import glob
@@ -607,6 +608,11 @@ def friendly_datetime(dt):
     return f"{dt.strftime('%b')} {dt.day}, {dt.year} at {time_str}"
 
 
+def new_restore_folder():
+    """A fresh, clearly-labelled folder for restored copies - never a live path."""
+    return os.path.join(HOME, "Keep-Restored", datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+
 def friendly_timestamp(iso_string):
     """Parses Keep's two ISO-ish timestamp sources - `date -Is` (with a
     timezone offset, from backup/maintenance logs) or Borg's own naive-
@@ -1000,9 +1006,9 @@ class ItemPicker(RestorePicker):
         else:
             shutil.copy2(src, dest)
 
-    def restore_checked_safe(self):
+    def restore_checked_safe(self, dest_dir=None):
         """No destination picker needed - lands in a clearly-labelled, always-new
-        review folder. Never touches the live path, so there's nothing to
+        review folder (or the folder Review restore… was pointed at). Never touches the live path, so there's nothing to
         confirm and nothing that can be lost by picking the wrong archive."""
         app_logging.record("operation.requested", operation="safe_restore")
         checked = self._checked_items()
@@ -1020,8 +1026,7 @@ class ItemPicker(RestorePicker):
         if not self._ensure_mounted_cb():
             QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
             return
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        dest_dir = os.path.join(HOME, "Keep-Restored", stamp)
+        dest_dir = dest_dir or new_restore_folder()
         done, failed = [], []
         for identity, rel_path, live_target in entries:
             src = f"{MOUNTPOINT}/{rel_path}"
@@ -2376,11 +2381,11 @@ class HelpDialog(QDialog):
              "file browser into the mounted archive, for anything that "
              "isn't in either curated list."),
             ("Restoring: Safe vs Direct",
-             "\"Restore safely\" copies files to "
+             "\"Review restore…\" (Ctrl+R) shows what you checked and copies it to "
              "~/Keep-Restored/<timestamp>/ without touching anything live - "
              "always safe to try, and the normal way to look at an older "
-             "version of something.\n\n"
-             "\"Restore directly…\" overwrites the real, live files. "
+             "version of something. Change folder… picks another destination.\n\n"
+             "More options ▸ \"Restore to original location…\" overwrites the real, live files. "
              "Keep automatically saves whatever was there first to "
              "~/Keep-Restored/Before-Direct-Restore/<timestamp>/ before it "
              "does, so it can be undone by hand if needed - but treat it as "
@@ -2720,6 +2725,8 @@ class MainWindow(QWidget):
         self.action_change_destination = backup_menu.addAction("Change destination…", self.change_backup_destination)
         self.action_edit_excludes = backup_menu.addAction("Edit backup excludes…", self.edit_excludes)
         self.action_back_up_now.setShortcut(QKeySequence("Ctrl+B"))
+        self.action_review_restore = backup_menu.addAction("Review restore…", self.review_restore)
+        self.action_review_restore.setShortcut(QKeySequence("Ctrl+R"))
         self.action_backup_sources.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.action_schedule.setShortcut(QKeySequence("Ctrl+Shift+A"))
         backup_menu.addSeparator()
@@ -2763,6 +2770,10 @@ class MainWindow(QWidget):
             for name in view.CONTROL_NAMES:
                 setattr(self, name, getattr(view, name))
         self.restore_surface = self.restore_page
+        # The toolbar's Review restore… replaces the per-tab restore buttons.
+        self.btn_restore.hide()
+        for picker in (self.apps_picker, self.folders_picker):
+            picker.btn_restore_safe.hide()
         # ODCS window model: toolbar (view switch, primary action trailing)
         # over a sidebar + content split. A stacked widget replaces the old
         # tab widget; the ViewSwitch in the toolbar drives it.
@@ -2786,7 +2797,11 @@ class MainWindow(QWidget):
         bar.addWidget(app_title)
         bar.addWidget(self.view_switch)
         bar.addStretch(1)
-        for widget in (self.btn_stop, self.btn_backup):
+        # Restore view's task: one review step for every tab, always into a new folder.
+        self.btn_review_restore = QPushButton("Review restore…")
+        self.btn_review_restore.clicked.connect(self.review_restore)
+        self.btn_review_restore.hide()
+        for widget in (self.btn_stop, self.btn_backup, self.btn_review_restore):
             bar.addWidget(widget)
         root.addWidget(toolbar)
         for index in (0, 1):
@@ -2815,11 +2830,11 @@ class MainWindow(QWidget):
 
     def _update_primary_action(self, index=None):
         """The strongest accent marks the current view's task: Back up now on
-        Status, Restore selected to... on Restore (DESIGN.md principle 4)."""
+        Status, Review restore… on Restore (DESIGN.md principle 4)."""
         index = self.pages.currentIndex() if index is None else index
         theming.role(self.btn_backup, "primary" if index == 0 else "")
-        if hasattr(self, "btn_restore"):
-            theming.role(self.btn_restore, "primary" if index == 1 else "")
+        theming.role(self.btn_review_restore, "primary" if index == 1 else "")
+        self.btn_review_restore.setVisible(index == 1)
 
     def _apply_theme_dependent_styling(self):
         theming.install(QApplication.instance(), CONFIG.get("theme", "system"))
@@ -4386,7 +4401,32 @@ class MainWindow(QWidget):
         self.fs_model.setRootPath(path)
         self.tree.setRootIndex(self.fs_model.index(path))
 
-    def restore_selected(self):
+    def review_restore(self):
+        """Toolbar primary on the Restore view: gather what the current tab has
+        checked or selected, show exactly what goes where, then restore into a
+        new Keep-Restored folder (or one the person picks)."""
+        self.pages.setCurrentIndex(1)
+        tab = self.tabs.currentIndex()
+        picker = {0: self.apps_picker, 1: self.folders_picker}.get(tab)
+        if picker is not None:
+            names = [item.text() for item in picker._all_items()]
+        else:
+            names = [os.path.basename(self.fs_model.filePath(index)) or self.fs_model.filePath(index)
+                     for index in self.tree.selectionModel().selectedRows()]
+        if not names:
+            QMessageBox.information(self, "Keep", "Check the items you want to restore first." if picker is not None
+                                    else "Select one or more files or folders first (Ctrl+click or Shift+click for several).")
+            return
+        archive = self.archive_combo.currentText() or "this backup"
+        dialog = ReviewRestoreDialog(names, archive, new_restore_folder(), HOME, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        if picker is not None:
+            picker.restore_checked_safe(dest_dir=dialog.destination)
+        else:
+            self.restore_selected(dest_dir=dialog.destination)
+
+    def restore_selected(self, dest_dir=None):
         app_logging.record("operation.requested", operation="file_restore")
         rows = self.tree.selectionModel().selectedRows()
         if not rows:
@@ -4410,7 +4450,8 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
             return
         sources = [f"{MOUNTPOINT}/{rel_path}" for rel_path in rel_paths]
-        dest_dir = QFileDialog.getExistingDirectory(self, f"Restore {len(sources)} item(s) to folder (a copy, not the live location)")
+        if not dest_dir:  # also False when called straight from a button's clicked(bool)
+            dest_dir = QFileDialog.getExistingDirectory(self, f"Restore {len(sources)} item(s) to folder (a copy, not the live location)")
         if not dest_dir:
             return
         done, failed = [], []

@@ -20,6 +20,11 @@ class RestorePage(QWidget):
         restore_font.setBold(True)
         restore_intro.setFont(restore_font)
         browse_layout.addWidget(restore_intro)
+        restore_subtitle = QLabel("Restore a copy to a new folder. Your current files and app data stay unchanged "
+                                  "until you decide what to keep.")
+        restore_subtitle.setWordWrap(True)
+        restore_subtitle.setProperty("role", "secondary")
+        browse_layout.addWidget(restore_subtitle)
 
         archive_row = QHBoxLayout()
         archive_row.addWidget(QLabel("Backup:"))

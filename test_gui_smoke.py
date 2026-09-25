@@ -193,9 +193,17 @@ with tempfile.TemporaryDirectory() as directory:
     assert window.pages.count() == 2 and window.view_switch.currentIndex() == 0
     window.view_switch.setCurrentIndex(1)
     assert window.pages.currentIndex() == 1
-    assert window.btn_restore.property("role") == "primary" and window.btn_backup.property("role") != "primary"
+    assert window.btn_review_restore.property("role") == "primary" and window.btn_backup.property("role") != "primary"
+    assert not window.btn_review_restore.isHidden() and window.btn_restore.isHidden()
+    # Review restore always defaults to a new Keep-Restored folder and says so.
+    from keep_ui.review_restore import ReviewRestoreDialog, display_path
+    review = ReviewRestoreDialog([f"item {n}" for n in range(12)], "Today at 8:51 AM", main.new_restore_folder(), main.HOME, window)
+    assert "Keep-Restored" in review.destination and review.destination_label.text().startswith("~/Keep-Restored/")
+    assert review.restore_button.isDefault() and review.restore_button.property("role") == "primary"
+    assert display_path("/elsewhere/x", "/home/me") == "/elsewhere/x"
+    review.deleteLater()
     window.view_switch.setCurrentIndex(0)
-    assert window.btn_backup.property("role") == "primary"
+    assert window.btn_backup.property("role") == "primary" and window.btn_review_restore.isHidden()
     # Three separate facts; an untested recovery says so and offers the test.
     assert list(window.status_facts.facts) == ["backup", "check", "recovery"]
     assert window.status_facts.whenText("recovery") == window.status_facts.NEVER
