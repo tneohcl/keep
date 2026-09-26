@@ -2,7 +2,8 @@
 #   flatpak run org.flatpak.Builder --user --install --force-clean \
 #       --install-deps-from=flathub build-flatpak packaging/flatpak/io.github.tneohcl.Keep.yml
 # A backup app has to read nearly everything, so like Vorta and Pika Backup it
-# gets host filesystem access (plus ~/.var/app, which "host" leaves out), /dev
+# gets host filesystem access (plus ~/.var/app and ~/.local/share/flatpak,
+# which "host" leaves out), /dev
 # for FUSE, and the Flatpak portal for the few host tools it runs (host.py).
 app-id: io.github.tneohcl.Keep
 runtime: org.kde.Platform
@@ -20,6 +21,7 @@ finish-args:
   - --device=all
   - --filesystem=host
   - --filesystem=~/.var/app
+  - --filesystem=xdg-data/flatpak:ro
   - --talk-name=org.freedesktop.Flatpak
   - --talk-name=org.freedesktop.Notifications
 modules:

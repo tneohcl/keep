@@ -16,8 +16,10 @@ a Flatpak and has a private `/tmp`.
 A backup app reads nearly everything, so like Vorta and Pika Backup it's only
 lightly sandboxed:
 
-- `--filesystem=host` and `--filesystem=~/.var/app` (which "host" leaves out) to back
-  up folders and other apps' data, and to reach the destination.
+- `--filesystem=host`, plus `~/.var/app` and `xdg-data/flatpak:ro` (which "host" leaves out),
+  to back up folders, other apps' data and Flatpak permission overrides, and to reach the
+  destination. Without `xdg-data/flatpak`, the "Flatpak App Permissions" item
+  (`~/.local/share/flatpak/overrides`) is invisible to the app and was silently skipped.
 - `--device=all` for `/dev/fuse` (browsing a backup mounts it with `borg mount`).
 - `--talk-name=org.freedesktop.Flatpak`, so `host.py` can run `systemctl --user`
   (the schedule), `flatpak` (installed apps), `findmnt` (drives) and `fusermount`
