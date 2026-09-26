@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (QButtonGroup, QDialog, QDialogButtonBox, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QPushButton, QSizePolicy,
@@ -182,9 +182,21 @@ class SettingRow(QPushButton):
     def setLeadingIcon(self, icon: QIcon | None) -> None:  # noqa: N802
         """None hides the icon column; a QIcon that is null (no theme icon)
         keeps the column empty so rows in one list stay aligned."""
+        self._leading_icon = icon
         self._icon.setVisible(icon is not None)
+        self._draw_icon()
+
+    def _draw_icon(self) -> None:
+        icon = getattr(self, "_leading_icon", None)
         if icon is not None:
             self._icon.setPixmap(icon.pixmap(self.ICON_SIZE, self.ICON_SIZE) if not icon.isNull() else QPixmap())
+
+    def changeEvent(self, event):  # noqa: N802 (Qt API)
+        # A theme switch can change the icon theme (match_icon_theme); the
+        # label holds a rendered pixmap, so draw it again.
+        if event.type() in (QEvent.StyleChange, QEvent.PaletteChange):
+            self._draw_icon()
+        super().changeEvent(event)
 
     def setValue(self, value: str, state: str = "", indicator: str | None = None) -> None:  # noqa: N802
         """state: "" | "warning" | "error" colours the value. indicator: a

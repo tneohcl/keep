@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
 from . import color, tokens
@@ -129,6 +129,36 @@ def install_focus_visible(app: QApplication) -> FocusVisibleFilter:
     return existing
 
 
+# The desktop's icon theme, remembered the first time match_icon_theme runs,
+# before any switching.
+_SYSTEM_ICON_THEME: str | None = None
+_DARK_SUFFIX = "-dark"
+
+
+def _icon_theme_exists(name: str) -> bool:
+    return any((Path(root) / name / "index.theme").is_file() for root in QIcon.themeSearchPaths())
+
+
+def match_icon_theme(theme_name: str) -> str:
+    """Use the light or dark variant of the desktop's icon theme to match the
+    app's theme ("breeze" <-> "breeze-dark"). Monochrome symbolic icons are
+    drawn for one background: a Light app on a dark desktop otherwise gets
+    light glyphs on a light background. A theme with no such variant is left
+    alone. Call it before applying the new stylesheet, so widgets that redraw
+    on the style change pick up the new icons. Returns the icon theme in use."""
+    global _SYSTEM_ICON_THEME
+    if _SYSTEM_ICON_THEME is None:
+        _SYSTEM_ICON_THEME = QIcon.themeName()
+    system = _SYSTEM_ICON_THEME
+    if not system:
+        return QIcon.themeName()
+    base = system[:-len(_DARK_SUFFIX)] if system.endswith(_DARK_SUFFIX) else system
+    wanted = base + _DARK_SUFFIX if theme_name == "dark" else base
+    if wanted != QIcon.themeName() and _icon_theme_exists(wanted):
+        QIcon.setThemeName(wanted)
+    return QIcon.themeName()
+
+
 class ThemeController(QObject):
     """Owns the application stylesheet. Re-applies on theme choice changes and,
     for "system", on live desktop palette / color-scheme changes."""
@@ -168,6 +198,7 @@ class ThemeController(QObject):
             self.theme_name, self.values = name, values
             _CURRENT.clear()
             _CURRENT.update(values)
+            match_icon_theme(name)
             if qss != self._applied:
                 self._applied = qss
                 self.app.setStyleSheet(qss)
