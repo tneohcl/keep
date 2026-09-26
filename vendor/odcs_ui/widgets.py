@@ -42,14 +42,18 @@ class ViewSwitch(QFrame):
 
     currentChanged = Signal(int)
 
-    def __init__(self, labels: Iterable[str], parent: QWidget | None = None, accessible_name: str = "View"):
+    def __init__(self, labels: Iterable[str], parent: QWidget | None = None, accessible_name: str = "View",
+                 fill: bool = False):
+        """fill=True: take the full width available (e.g. a sidebar's, lined up
+        with the cards under it), split evenly between the segments."""
         super().__init__(parent)
         self.setObjectName("odcsViewSwitch")
+        self._fill = fill
         self.setAccessibleName(accessible_name)
         # Hug the segments: in a taller row (a toolbar with larger buttons) a
         # stretched frame put the extra height above and below them, so the
         # 2 px inset looked wider at the top and bottom than at the sides.
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Expanding if fill else QSizePolicy.Preferred, QSizePolicy.Fixed)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(2)
@@ -61,13 +65,29 @@ class ViewSwitch(QFrame):
             button.setCheckable(True)
             button.setAutoDefault(False)
             self._group.addButton(button, index)
-            layout.addWidget(button)
+            if fill:
+                # Equal segments whatever their labels: ignore each label's own
+                # width and share the frame evenly (minimumSizeHint keeps every
+                # segment at least as wide as the widest label).
+                button.setSizePolicy(QSizePolicy.Ignored, button.sizePolicy().verticalPolicy())
+            layout.addWidget(button, 1 if fill else 0)
         self._group.idToggled.connect(lambda index, on: on and self.currentChanged.emit(index))
         if self._group.buttons():
             self._group.button(0).setChecked(True)
 
     def buttons(self) -> list[QPushButton]:
         return [self._group.button(i) for i in range(len(self._group.buttons()))]
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        hint = super().minimumSizeHint()
+        buttons = self.buttons()
+        if not self._fill or not buttons:
+            return hint
+        margins = self.layout().contentsMargins()
+        widest = max(button.sizeHint().width() for button in buttons)
+        width = (widest * len(buttons) + self.layout().spacing() * (len(buttons) - 1)
+                 + margins.left() + margins.right())
+        return QSize(max(hint.width(), width), hint.height())
 
     def currentIndex(self) -> int:  # noqa: N802 (Qt naming)
         return self._group.checkedId()
