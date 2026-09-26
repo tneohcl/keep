@@ -183,7 +183,7 @@ class RunningAppCheck(unittest.TestCase):
             return type("Done", (), {"returncode": 0})()
         with patch.object(host, "flatpak_id", return_value=APP_ID), patch.object(main.subprocess, "run", fake_run):
             self.assertTrue(main.is_native_process_running(["krita"]))
-        self.assertEqual(calls, [["flatpak-spawn", "--host", "pgrep", "-x", "krita"]])
+        self.assertEqual(calls, [["flatpak-spawn", "--host", "--directory=/", "pgrep", "-x", "krita"]])
 
 
 class OutsideTheFlatpakUnchanged(unittest.TestCase):
