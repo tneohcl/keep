@@ -22,7 +22,7 @@ class OutsideFlatpak(unittest.TestCase):
 
     def test_timer_runs_keep_backup_directly(self):
         cmd = consumer.backup_command({"backup_engine": "builtin"}, "/c.json", "/opt/keep", "/usr/bin/python3")
-        self.assertEqual(cmd, ["/usr/bin/python3", "/opt/keep/keep_backup.py", "--config", "/c.json"])
+        self.assertEqual(cmd, ["/usr/bin/python3", os.path.join("/opt/keep", "keep_backup.py"), "--config", "/c.json"])
 
 
 class InsideFlatpak(unittest.TestCase):
@@ -38,6 +38,12 @@ class InsideFlatpak(unittest.TestCase):
     def test_mount_point_is_shared_with_the_host(self):
         with patch.dict(os.environ, {"XDG_RUNTIME_DIR": "/run/user/1000"}):
             self.assertEqual(host.shared_path("borg-keep-mount"), f"/run/user/1000/app/{APP_ID}/borg-keep-mount")
+
+    def test_back_up_now_runs_the_bundled_engine(self):
+        # Review of #8: the GUI's "Back up now" shares backup_command with the
+        # timer, and must not get the host-only `flatpak run` command.
+        cmd = consumer.backup_command({"backup_engine": "builtin"}, "/c.json", "/app/share/keep", "/usr/bin/python3")
+        self.assertEqual(cmd, ["/usr/bin/python3", os.path.join("/app/share/keep", "keep_backup.py"), "--config", "/c.json"])
 
     def test_timer_runs_the_flatpak(self):
         config = {"backup_engine": "builtin", "schedule": {"time": "04:00"}}
