@@ -606,6 +606,8 @@ def friendly_datetime(dt):
     Keep shows (backup/maintenance log timestamps, Borg archive times, the
     next-scheduled run), each from a different source in a different raw
     format, so they all read the same way once actually displayed."""
+    if dt.tzinfo:
+        dt = dt.astimezone()  # shown in local time, whatever offset it was stored with
     now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
     today = now.date()
     d = dt.date()
