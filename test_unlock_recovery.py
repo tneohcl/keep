@@ -59,7 +59,7 @@ os.environ["BORG_CONFIG_DIR"] = BORG_CONFIG_DIR  # isolates key storage from the
 
 import main  # noqa: E402
 
-def capture_restore_results(parent, done, failed, directory, direct=False):
+def capture_restore_results(parent, done, failed, directory, direct=False, skipped=()):
     message = f"Restored {len(done)} item(s):\n{directory}\n" + "\n".join(done + failed)
     method = main.QMessageBox.warning if failed else main.QMessageBox.information
     method(parent, "Keep", message)

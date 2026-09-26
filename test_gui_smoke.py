@@ -32,7 +32,10 @@ with tempfile.TemporaryDirectory() as directory:
     with patch.object(main, "LOGDIR", str(scope_logs)):
         assert main.last_backup_attempt_status("/a", "a-id")[0] == "ok"
         assert main.last_backup_attempt_status("/a", "replacement-id")[0] == "never run"
-        assert main.last_backup_attempt_status("/a", None)[0] == "never run"
+        # Unknown ID: this location's history, marked unverified - never "no backups".
+        assert main.backup_history("/a", None) == ("ok", "2026-09-25T08:00:00+08:00", False)
+        assert main.backup_history("/a", "a-id")[2] is True
+        assert main.backup_history("/c", None)[0] == "never run"
     # Large results remain within the screen, with all diagnostics accessible.
     from keep_ui.restore_results import RestoreResultsDialog
     results = RestoreResultsDialog(None, [f"App {i}: /restored/app-{i}" for i in range(300)],
@@ -235,7 +238,7 @@ with tempfile.TemporaryDirectory() as directory:
         time.sleep(.05)
         return original_copy(*args)
     with patch.object(safe_copy, "copy_new", side_effect=slow_copy):
-        done, failed = run_restore(window, [(source, "file", "File")], str(Path(directory) / "copy-output"))
+        done, failed, skipped = run_restore(window, [(source, "file", "File")], str(Path(directory) / "copy-output"))
     timer.stop()
     assert done and not failed and ticks, "The UI must process events while restoring"
     window.view_switch.setCurrentIndex(0)

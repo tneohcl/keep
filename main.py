@@ -652,38 +652,74 @@ def friendly_systemd_timestamp(text):
     return friendly_datetime(dt)
 
 
+UNVERIFIED_HISTORY = "Recorded for this backup location. Keep will confirm it once it can read the backup."
+
+
+def find_log(prefix, repository=None, repository_id=None):
+    """(path, verified) for the newest `prefix` run log of `repository`.
+
+    A log recording a different repository ID belongs to another repository
+    at this path and is skipped. A log for this path whose ID can't be
+    compared (the current ID isn't known yet, e.g. while the destination is
+    offline, or the log predates ID logging) is returned unverified: history
+    the Status page shows as such, instead of claiming there is none.
+    Without a repository: the newest log, verified."""
+    for path in sorted(glob.glob(f"{LOGDIR}/{prefix}-*.log"), reverse=True):
+        if repository is None:
+            return path, True
+        try:
+            with open(path, encoding="utf-8", errors="replace") as stream:
+                logged_path, logged_id = _consumer_module._log_repository(stream.read(16384))
+        except OSError:
+            continue
+        if logged_path != repository:
+            continue
+        if logged_id and repository_id and logged_id != repository_id:
+            continue
+        return path, bool(repository_id and logged_id == repository_id)
+    return None, False
+
+
 def latest_log(prefix, repository=None, repository_id=None):
-    files = sorted(glob.glob(f"{LOGDIR}/{prefix}-*.log"), reverse=True)
-    for path in files:
-        if repository is not None:
-            try:
-                with open(path, encoding="utf-8", errors="replace") as stream:
-                    logged_path, logged_id = _consumer_module._log_repository(stream.read(16384))
-            except OSError:
-                continue
-            if not repository_id or logged_id != repository_id or logged_path != repository:
-                continue
-        return path
-    return None
+    return find_log(prefix, repository, repository_id)[0]
 
 
-def log_verdict(prefix, pass_markers, fail_markers, repository=None, repository_id=None):
-    path = latest_log(prefix, repository, repository_id)
+def _no_history(repository, repository_id):
+    # "never run" is only a verified fact when Keep knows which repository it
+    # is looking at; otherwise it just means "can't tell yet".
+    return "never run", None, repository is None or bool(repository_id)
+
+
+def log_history(prefix, pass_markers, fail_markers, repository=None, repository_id=None):
+    """(verdict, timestamp, verified); see find_log for "verified"."""
+    path, verified = find_log(prefix, repository, repository_id)
     if not path:
-        return "never run", None
+        return _no_history(repository, repository_id)
     text = Path(path).read_text()
     ts_match = re.search(r"^\S+", text)
     ts = ts_match.group(0) if ts_match else ""
     for m in fail_markers:
         if m in text:
-            return "FAILED", ts
+            return "FAILED", ts, verified
     for m in pass_markers:
         if m in text:
-            return "ok", ts
-    return "unknown", ts
+            return "ok", ts, verified
+    return "unknown", ts, verified
 
 
-def last_backup_attempt_status(repository=None, repository_id=None):
+def log_verdict(prefix, pass_markers, fail_markers, repository=None, repository_id=None):
+    return log_history(prefix, pass_markers, fail_markers, repository, repository_id)[:2]
+
+
+def history_text(verdict, ts, verified):
+    """A Details row: the verdict and when, saying so if it isn't verified."""
+    if not ts:
+        return verdict if verified else "Unable to verify for this repository"
+    text = f"{verdict} ({friendly_timestamp(ts)})"
+    return text if verified else f"{text} · not verified for this repository"
+
+
+def backup_history(repository=None, repository_id=None):
     """The newest archive tells you the last SUCCESSFUL backup - not whether
     the most recent scheduled attempt actually worked. A failed run creates
     no new archive at all, so "last successful" alone can look healthy on a
@@ -699,20 +735,26 @@ def last_backup_attempt_status(repository=None, repository_id=None):
     marker line to this same log once the killed process actually exits, so
     this is a pure text check like the others - no shared in-memory state
     with the worker, safe to call any time, from any process, exactly like
-    the existing checks."""
-    path = latest_log("backup", repository, repository_id)
+    the existing checks.
+
+    Returns (verdict, timestamp, verified); see find_log for "verified"."""
+    path, verified = find_log("backup", repository, repository_id)
     if not path:
-        return "never run", None
+        return _no_history(repository, repository_id)
     text = Path(path).read_text()
     ts_match = re.search(r"^\S+", text)
     ts = ts_match.group(0) if ts_match else ""
     if "backup completed with warnings" in text:
-        return "warning", ts
+        return "warning", ts, verified
     if "backup completed successfully" in text:
-        return "ok", ts
+        return "ok", ts, verified
     if "STOPPED BY USER" in text:
-        return "stopped", ts
-    return "FAILED", ts
+        return "stopped", ts, verified
+    return "FAILED", ts, verified
+
+
+def last_backup_attempt_status(repository=None, repository_id=None):
+    return backup_history(repository, repository_id)[:2]
 
 
 def flatpak_app_names():
@@ -1045,13 +1087,13 @@ class ItemPicker(RestorePicker):
         previous_busy = getattr(controller, "_repo_op_running", False)
         controller._repo_op_running = True
         try:
-            done, failed = run_restore(self, plan, dest_dir)
+            done, failed, skipped = run_restore(self, plan, dest_dir)
         finally:
             controller._repo_op_running = previous_busy
             if timer:
                 controller._touch_activity()
-        app_logging.record("operation.finished", operation="safe_restore", result="partial_failure" if failed else "success", count=len(done), failed=len(failed))
-        show_restore_results(self, done, failed, dest_dir)
+        app_logging.record("operation.finished", operation="safe_restore", result="partial_failure" if failed else "success", count=len(done), failed=len(failed), skipped=len(skipped))
+        show_restore_results(self, done, failed, dest_dir, skipped=skipped)
 
 
     def restore_checked_direct(self):
@@ -2988,7 +3030,7 @@ class MainWindow(QWidget):
 
     # --- status ---
 
-    def _apply_status_headline(self, dest_available, verdict, ts):
+    def _apply_status_headline(self, dest_available, verdict, ts, verified=True, checking=False):
         """One literally-true line answering 'am I protected?' without
         needing to interpret several rows. Priority: an unreachable
         destination beats a stale last-attempt verdict (can't back up at
@@ -3003,9 +3045,16 @@ class MainWindow(QWidget):
         same event as the backup dying on its own, and showing it as a red
         "failed" after an intentional action undermines trust in what red
         actually means elsewhere in this app. Neutral styling, calm
-        wording, same as "never run"."""
+        wording, same as "never run".
+
+        `verified` is False when the history can't be tied to this
+        repository (its ID isn't known): that is "Unable to verify backup
+        history", never "No backups yet" or a success. `checking` means the
+        repository query that answers it is still running. A failure is
+        reported either way - better over-reported than hidden."""
         state = ("error" if not dest_available or verdict == "FAILED" else
-                 "warning" if verdict == "warning" else
+                 "never" if checking else
+                 "warning" if not verified or verdict == "warning" else
                  "never" if verdict in ("stopped", "never run") else "ok")
         self.headline_icon.setState(state)
         if not dest_available:
@@ -3018,6 +3067,12 @@ class MainWindow(QWidget):
             # meant to be readable at a glance just adds noise
             self.lbl_headline.setText("Last backup failed")
             theming.role(self.lbl_headline, "error")
+        elif checking:
+            self.lbl_headline.setText("Checking backup history…")
+            theming.role(self.lbl_headline, "")
+        elif not verified:
+            self.lbl_headline.setText("Unable to verify backup history")
+            theming.role(self.lbl_headline, "")
         elif verdict == "warning":
             self.lbl_headline.setText("Backup completed with warnings")
             theming.role(self.lbl_headline, "")
@@ -3147,33 +3202,38 @@ class MainWindow(QWidget):
         """Backup completed / Integrity checked / Recovery tested, each with its
         own result and date, from the same sources as the Details rows."""
         facts = self.status_facts
-        verdict, ts = last_backup_attempt_status(REPO or "", self._current_repository_id())
+        repository_id = self._current_repository_id()
+        verdict, ts, verified = backup_history(REPO or "", repository_id)
         state, description = {
             "ok": ("ok", "Your selected files were saved"),
             "warning": ("warning", "Finished with warnings. Show the log for details."),
             "stopped": ("warning", "The last backup was stopped before it finished"),
             "FAILED": ("error", "The last backup didn't finish. Show the log for details."),
         }.get(verdict, ("never", "Your selected files were saved"))
+        if not verified and verdict != "FAILED":
+            state, description = ("info", UNVERIFIED_HISTORY) if ts else (
+                "never", "Keep can't check the backup history until it can read the backup")
         facts.setFact("backup", state, friendly_timestamp(ts) if ts else "", description)
-        self.lbl_last_attempt.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else "Not yet verified for this repository")
+        self.lbl_last_attempt.setText(history_text(verdict, ts, verified))
         theming.role(self.lbl_last_attempt, "error" if state == "error" else "")
         self.lbl_check.setText("Not yet verified for this repository")
         self.lbl_verify.setText("Not yet verified for this repository")
 
         checks = []
         for prefix in ("check", "check-verify-data"):
-            outcome, when = log_verdict(prefix, ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", self._current_repository_id())
+            outcome, when, ok = log_history(prefix, ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", repository_id)
             if when:
-                checks.append((outcome, when))
+                checks.append((outcome, when, ok))
                 label = self.lbl_verify if prefix == "check-verify-data" else self.lbl_check
-                label.setText(f"{outcome} ({friendly_timestamp(when)})")
+                label.setText(history_text(outcome, when, ok))
         health_path = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "keep/last-check.json"
         try:
             health = json.loads(health_path.read_text(encoding="utf-8"))
-            if _consumer_module.matches_repository(health, dest.get("repo"), self._current_repository_id()) and (health.get("finished") or health.get("started")):
-                checks.append((health.get("result", "unknown"), health.get("finished") or health.get("started")))
+            match = _consumer_module.repository_match(health, dest.get("repo"), repository_id)
+            if match and (health.get("finished") or health.get("started")):
+                checks.append((health.get("result", "unknown"), health.get("finished") or health.get("started"), match == "verified"))
                 label = self.lbl_verify if health.get("deep") else self.lbl_check
-                label.setText(f"{checks[-1][0]} ({friendly_timestamp(checks[-1][1])})")
+                label.setText(history_text(*checks[-1]))
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -3184,7 +3244,7 @@ class MainWindow(QWidget):
                 return 0
 
         if checks:
-            outcome, when = max(checks, key=moment)
+            outcome, when, ok = max(checks, key=moment)
             state, description = {
                 "ok": ("ok", "Stored data is readable and consistent"),
                 "success": ("ok", "Stored data is readable and consistent"),
@@ -3192,19 +3252,21 @@ class MainWindow(QWidget):
                 "FAILED": ("error", "The last check found a problem. Show the log for details."),
                 "failed": ("error", "The last check found a problem. Show the log for details."),
             }.get(outcome, ("warning", "The last check didn't finish cleanly"))
+            if not ok and state == "ok":
+                state, description = "info", UNVERIFIED_HISTORY
             facts.setFact("check", state, friendly_timestamp(when), description)
         else:
             facts.setFact("check", "never", "", "Stored data is readable and consistent")
 
         record = recovery_test.load()
-        state, when, advice = recovery_test.status(record, dest.get("repo"), repository_id=self._current_repository_id())
+        state, when, advice = recovery_test.status(record, dest.get("repo"), repository_id=repository_id)
         facts.setFact("recovery", state, friendly_timestamp(when) if when else "", advice)
-        self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"), repository_id=self._current_repository_id()))
+        self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"), repository_id=repository_id))
         if state == "never":
             self.lbl_restore_test.setText("Not yet verified for this repository")
             theming.role(self.lbl_restore_test, "")
         if state != "never":
-            self.lbl_restore_test.setText(f"{record.get('result')} ({friendly_timestamp(when)})")
+            self.lbl_restore_test.setText(history_text(record.get("result"), when, state != "info"))
             theming.role(self.lbl_restore_test, "error" if state == "error" else "")
 
     def show_recovery_access(self):
@@ -3267,10 +3329,13 @@ class MainWindow(QWidget):
 
         # local-only, fast - stays synchronous. Only the NAS-dependent Borg
         # info/list calls below move to a background worker.
-        verdict, ts = last_backup_attempt_status(REPO or "", self._current_repository_id())
-        self.lbl_last_attempt.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
+        repository_id = self._current_repository_id()
+        verdict, ts, verified = backup_history(REPO or "", repository_id)
+        self.lbl_last_attempt.setText(history_text(verdict, ts, verified))
         theming.role(self.lbl_last_attempt, "error" if verdict == "FAILED" else "")
-        self._apply_status_headline(dest["available"], verdict, ts)
+        # Without the ID, the repository query started below is what verifies it.
+        checking = bool(dest["available"] and not repository_id and not self._repo_op_running)
+        self._apply_status_headline(dest["available"], verdict, ts, verified, checking)
 
         schedule = CONFIG.get("schedule", {})
         if schedule.get("managed_by_keep") and schedule.get("enabled") is False:
@@ -3290,22 +3355,21 @@ class MainWindow(QWidget):
             except Exception:
                 self.lbl_next.setText("unknown")
 
-        verdict, ts = log_verdict("check", ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", self._current_repository_id())
-        self.lbl_check.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
-        verdict, ts = log_verdict("check-verify-data", ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", self._current_repository_id())
-        self.lbl_verify.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
-        verdict, ts = log_verdict("restore-test", ["restore test passed"], ["restore test FAILED", "FAIL:"], REPO or "", self._current_repository_id())
-        self.lbl_restore_test.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
+        self.lbl_check.setText(history_text(*log_history("check", ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", repository_id)))
+        self.lbl_verify.setText(history_text(*log_history("check-verify-data", ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", repository_id)))
+        verdict, ts, verified = log_history("restore-test", ["restore test passed"], ["restore test FAILED", "FAIL:"], REPO or "", repository_id)
+        self.lbl_restore_test.setText(history_text(verdict, ts, verified))
         theming.role(self.lbl_restore_test, "error" if verdict == "FAILED" else "")
         # CLI check outcomes are independent of backup success and match this repo.
         health_path = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "keep/last-check.json"
         try:
             health = json.loads(health_path.read_text(encoding="utf-8"))
-            if _consumer_module.matches_repository(health, dest.get("repo"), self._current_repository_id()):
+            match = _consumer_module.repository_match(health, dest.get("repo"), repository_id)
+            if match:
                 label = self.lbl_verify if health.get("deep") else self.lbl_check
                 outcome = health.get("result", "unknown")
                 timestamp = health.get("finished") or health.get("started")
-                label.setText(f"{outcome} ({friendly_timestamp(timestamp)})" if timestamp else outcome)
+                label.setText(history_text(outcome, timestamp, match == "verified"))
                 theming.role(label, "error" if outcome in ("failed", "cancelled", "warning") else "")
         except (OSError, ValueError, TypeError):
             pass
@@ -3394,10 +3458,20 @@ class MainWindow(QWidget):
         # Recovery access shows these as "Verified by Keep" facts.
         self._verified_repo_info = (queried_repo, info, len(listing.get("archives", [])) if listing else None,
                                     datetime.now().astimezone().isoformat(timespec="seconds"))
+        repository_id = self._current_repository_id()
+        archive_times = [a.get("start") or a.get("time") for a in (listing or {}).get("archives", [])]
+        archive_times = [t for t in archive_times if t]
+        if repository_id and archive_times:
+            # Records from before Keep stored repository IDs: tie them to this
+            # repository when their dates allow it (recovery_test explains).
+            try:
+                recovery_test.adopt_legacy_records(queried_repo, repository_id, min(archive_times))
+            except OSError as exc:
+                app_logging.record("records.adopt_failed", error=type(exc).__name__)
         self._refresh_activity()  # now that the repository ID is known
         self._refresh_facts(DEST_STATUS)
-        verdict, ts = last_backup_attempt_status(REPO or "", self._current_repository_id())
-        self._apply_status_headline(DEST_STATUS["available"], verdict, ts)
+        verdict, ts, verified = backup_history(REPO or "", repository_id)
+        self._apply_status_headline(DEST_STATUS["available"], verdict, ts, verified)
         if info:
             stats = info.get("cache", {}).get("stats", {})
             size_gb = stats.get("unique_csize", 0) / (1024**3)
@@ -4583,12 +4657,12 @@ class MainWindow(QWidget):
         previous_busy = self._repo_op_running
         self._repo_op_running = True
         try:
-            done, failed = run_restore(self, plan, dest_dir)
+            done, failed, skipped = run_restore(self, plan, dest_dir)
         finally:
             self._repo_op_running = previous_busy
             self._touch_activity()
-        app_logging.record("operation.finished", operation="file_restore", result="partial_failure" if failed else "success", count=len(done), failed=len(failed))
-        show_restore_results(self, done, failed, dest_dir)
+        app_logging.record("operation.finished", operation="file_restore", result="partial_failure" if failed else "success", count=len(done), failed=len(failed), skipped=len(skipped))
+        show_restore_results(self, done, failed, dest_dir, skipped=skipped)
 
 
 

@@ -57,6 +57,8 @@ def summary(repository, now=None, repository_id=None):
         return "Not yet tested", "warning"
     if state == "warning":
         return "Test again", "warning"
+    if state == "info":
+        return "Tested · not yet verified", ""
     return ("Tested" if not unconfirmed else f"Tested · {unconfirmed} to confirm"), ""
 
 
@@ -284,7 +286,8 @@ class RecoveryAccessDialog(QDialog):
     def _refresh_test(self):
         state, when, advice = recovery_test.status(recovery_test.load(), self.repository, repository_id=self.repository_id)
         lead = {"never": "Not yet recorded.", "ok": f"Tested {self._friendly(when)}.",
-                "warning": f"Last tested {self._friendly(when)}.", "error": "The last test failed."}[state]
+                "warning": f"Last tested {self._friendly(when)}.", "error": "The last test failed.",
+                "info": f"Tested {self._friendly(when)}, not yet verified for this backup."}[state]
         self.test_icon.setState({"never": "warning"}.get(state, state))
         self.test_text.setText(f"<b>{lead}</b> {advice}")
 
