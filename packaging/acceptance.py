@@ -113,6 +113,16 @@ class Sandbox:
         repo_id = json.loads(info.stdout)["repository"]["id"] if info.returncode == 0 else None
         return main.backup_history(str(repo), repo_id)
 
+    def reason(self, repo):
+        """The failure reason Keep's Status page would show."""
+        import main
+        main.LOGDIR = str(self.logs)
+        return main.backup_failure_reason(str(repo), None)
+
+    def age_newest_log(self, seconds):
+        newest = sorted(self.logs.glob("backup-*.log"))[-1]
+        os.utime(newest, (time.time() - seconds, time.time() - seconds))
+
     def archives(self, repo):
         listing = self.borg("list", "--json", str(repo))
         return [a["name"] for a in json.loads(listing.stdout)["archives"]] if listing.returncode == 0 else None
@@ -191,6 +201,9 @@ def show_error(log):
     """Print the error Keep logged, as the person would see it in Show log."""
     errors = [line.split(" ", 1)[-1] for line in log.splitlines() if " ERROR " in f" {line} "]
     print(f"       Keep logged: {errors[0] if errors else '(no ERROR line; the run was cut off)'}")
+    reasons = [line.split(" Reason: ", 1)[1] for line in log.splitlines() if " Reason: " in line]
+    if reasons:
+        print(f"       Reason:      {reasons[-1]}")
 
 
 def recovered(box, config, repo, before):
@@ -244,9 +257,12 @@ def scenario_disappears(box):
     check("the interrupted run fails (non-zero exit)", rc != 0, f"rc={rc}")
     check("the interrupted run is never reported as a success", "backup completed" not in log)
     show_error(log)
+    check("the log gives the reason: destination disconnected", "Reason: " in log and "disconnected" in log)
     connect(store, mountpoint)                          # reconnect
     verdict = box.verdict(repo)
     check("Status page reports the interrupted run as failed", verdict[0] == "FAILED", str(verdict))
+    reason = box.reason(repo) or ""
+    check("Status page says the destination disconnected", "disconnected" in reason, reason)
     recovered(box, config, repo, [a for a in before if not a.endswith(".checkpoint")])
     (box.source / "big-2.bin").unlink()
 
@@ -274,6 +290,9 @@ def scenario_crash(box):
     check("Borg's lock was left behind by the crash", any(repo.glob("lock*")))
     verdict = box.verdict(repo)
     check("Status page reports the killed run as failed", verdict[0] == "FAILED", str(verdict))
+    box.age_newest_log(600)                            # seen later, nothing running
+    reason = box.reason(repo) or ""
+    check("Status page says the backup stopped before finishing", "stopped before finishing" in reason, reason)
     recovered(box, config, repo, [a for a in before if not a.endswith(".checkpoint")])
     check("the stale lock was cleared", not any(repo.glob("lock.exclusive")))
     (box.source / "big-3.bin").unlink()
@@ -298,8 +317,11 @@ def scenario_full(box):
     check("the failure is recorded in the log", "ERROR borg create failed" in log or "ERROR" in log)
     check("never reported as a success", "backup completed" not in log)
     show_error(log)
+    check("the log gives the reason: destination full", "Reason: " in log and "full" in log)
     verdict = box.verdict(repo)
     check("Status page reports it as failed", verdict[0] == "FAILED", str(verdict))
+    reason = box.reason(repo) or ""
+    check("Status page says the destination is full", "full" in reason, reason)
     filler.unlink()                                    # space freed
     recovered(box, config, repo, [a for a in before if not a.endswith(".checkpoint")])
     (box.source / "big-4.bin").unlink()

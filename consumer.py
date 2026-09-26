@@ -430,3 +430,71 @@ def repository_match(record, repository, repository_id):
     if recorded and repository_id:
         return "verified" if recorded == repository_id else None
     return "unverified"
+
+
+# Plain-language reasons for a failed Borg stage. The destination is only
+# blamed when Borg's output ties the error to the repository: a path inside it,
+# or one of Borg's own repository messages. Otherwise the reason is about this
+# computer, about a file being backed up, or neutral when the device can't be
+# established.
+REASON_DESTINATION_FULL = "The backup destination is full. Free up space there, then back up again."
+REASON_LOCAL_FULL = "This computer's disk is full (Borg needs space for its cache). Free up space on this computer, then back up again."
+REASON_FULL_UNKNOWN = "Out of disk space, either on this computer or at the backup destination. Free up space, then back up again."
+REASON_DISCONNECTED = "The backup destination disconnected during the backup. Reconnect it, then back up again."
+REASON_IO_UNKNOWN = ("A disk or network connection failed during the backup, either on this computer or at the "
+                     "backup destination. Check both, then back up again.")
+REASON_SOURCE_UNREADABLE = ("A file being backed up couldn't be read (a disk or network problem where it's stored). "
+                            "Check that disk or share, then back up again.")
+REASON_PERMISSION = "Keep doesn't have permission to write to the backup destination."
+REASON_PASSPHRASE = "The saved passphrase doesn't open this backup."
+REASON_BUSY = "Another backup or check is running. Keep will try again next time."
+
+_ENOSPC = {28, 122}                  # no space, disk quota exceeded
+_CONNECTION = {5, 107, 112, 113, 116, 101, 110}   # EIO, ENOTCONN, EHOSTDOWN, EHOSTUNREACH, ESTALE, ENETUNREACH, ETIMEDOUT
+_ERRNO_LINE = re.compile(r"\[Errno (\d+)\][^\n']*?(?:: '([^'\n]*)')?\s*$", re.M)
+
+
+def _inside(path: str, root: str) -> bool:
+    """Path boundary, not a string prefix: /r/repo2 is not inside /r/repo."""
+    path, root = path.rstrip("/"), root.rstrip("/")
+    return bool(root) and (path == root or path.startswith(root + "/"))
+
+
+def borg_failure_reason(output: str, repository: str | None) -> str | None:
+    """A plain-language reason for a failed Borg stage, from its output, or
+    None when nothing recognisable is there (the log stays the detail)."""
+    repo = (repository or "").rstrip("/")
+    if re.search(r"passphrase supplied in BORG_PASSPHRASE.*is incorrect|PassphraseWrong", output, re.I):
+        return REASON_PASSPHRASE
+    if re.search(r"Failed to create/acquire the lock|LockTimeout", output):
+        return REASON_BUSY
+    # Borg's Repository says these itself, so they are about the destination.
+    if re.search(r"No space left on device, cleaning up partial transaction|Insufficient free space to complete transaction", output):
+        return REASON_DESTINATION_FULL
+    for missing in re.findall(r"Repository (\S+) does not exist", output):
+        if repo and missing.rstrip("/") == repo:
+            return REASON_DISCONNECTED
+
+    errors = [(int(number), path or None) for number, path in _ERRNO_LINE.findall(output)]
+    at_destination = [(n, p) for n, p in errors if p and repo and _inside(p, repo)]
+    elsewhere = [(n, p) for n, p in errors if p and not (repo and _inside(p, repo))]
+    pathless = [n for n, p in errors if not p]
+
+    for number, _ in at_destination:
+        if number in _ENOSPC:
+            return REASON_DESTINATION_FULL
+        if number == 13:
+            return REASON_PERMISSION
+        if number == 2 or number in _CONNECTION:
+            return REASON_DISCONNECTED
+    for number, _ in elsewhere:
+        if number in _ENOSPC:
+            return REASON_LOCAL_FULL    # Borg writes only its cache and temp files here
+        if number in _CONNECTION:
+            return REASON_SOURCE_UNREADABLE
+    for number in pathless:
+        if number in _ENOSPC:
+            return REASON_FULL_UNKNOWN
+        if number in _CONNECTION:
+            return REASON_IO_UNKNOWN
+    return None
