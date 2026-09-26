@@ -383,9 +383,6 @@ def backup_command(config: dict, config_path: str, app_dir: str, python_exe: str
     normalize_config(config)
     if config.get("backup_engine") == "external" and config.get("backup_script"):
         return [os.path.expanduser(config["backup_script"])]
-    flatpak_run = host.backup_command(config_path)
-    if flatpak_run:
-        return flatpak_run
     python_exe = python_exe or sys.executable or "/usr/bin/python3"
     return [python_exe, os.path.join(app_dir, "keep_backup.py"), "--config", config_path]
 
@@ -412,7 +409,12 @@ def _systemd_quote(value: str) -> str:
 
 
 def render_systemd_units(config: dict, config_path: str, app_dir: str, python_exe: str | None = None) -> tuple[str, str]:
-    cmd = backup_command(config, config_path, app_dir, python_exe)
+    # Inside a Flatpak the host's systemd can't reach the sandbox's Python:
+    # the timer runs `flatpak run --command=keep-backup` instead. (Only the
+    # timer: "Back up now" runs backup_command, the bundled engine.)
+    normalize_config(config)
+    external = config.get("backup_engine") == "external" and config.get("backup_script")
+    cmd = (None if external else host.backup_command(config_path)) or backup_command(config, config_path, app_dir, python_exe)
     exec_start = " ".join(_systemd_quote(part) for part in cmd)
     service = f"""[Unit]\nDescription=Keep backup\n\n[Service]\nType=oneshot\nExecStart={exec_start}\n"""
     schedule = config.get("schedule", {})

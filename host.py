@@ -7,6 +7,7 @@ fusermount, see packaging/flatpak). Inside a Flatpak, command() runs them
 through flatpak-spawn --host; anywhere else it leaves them unchanged.
 """
 import os
+import posixpath
 
 FLATPAK_BIN = "/usr/bin/flatpak"
 
@@ -29,8 +30,8 @@ def shared_path(name):
     app_id = flatpak_id()
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if app_id and runtime:
-        return os.path.join(runtime, "app", app_id, name)
-    return os.path.join("/tmp", name)
+        return posixpath.join(runtime, "app", app_id, name)
+    return posixpath.join("/tmp", name)
 
 
 def backup_command(config_path):
