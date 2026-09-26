@@ -15,6 +15,7 @@ import borg_ops
 import consumer
 import destination
 import host
+import version
 from operation_lock import RepositoryLock, RepositoryBusy
 
 
@@ -24,7 +25,7 @@ def state_root():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="keep-cli")
-    parser.add_argument("--version", action="version", version="keep-cli 0.9.2")
+    parser.add_argument("--version", action="version", version=f"keep-cli {version.VERSION}")
     parser.add_argument("--config", type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("status", "archives", "doctor", "logs", "check"):

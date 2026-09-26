@@ -3,6 +3,7 @@ import app_logging
 import borg_ops
 from operation_lock import RepositoryBusy, RepositoryLock
 import host
+import version
 
 if __name__ == "__main__":
     app_logging.start()
@@ -2568,11 +2569,9 @@ class AboutDialog(QDialog):
 
         layout.addWidget(QLabel("A BorgBackup front end for backup status, restore, and recovery."))
 
-        try:
-            build_stamp = datetime.fromtimestamp(os.path.getmtime(__file__)).strftime("%Y-%m-%d %H:%M")
-        except OSError:
-            build_stamp = "unknown"
-        build_lbl = QLabel(f"Build: {build_stamp}")
+        # Not a file's mtime: packagers such as Flatpak reset it to 1970.
+        build = version.build_info()
+        build_lbl = QLabel(f"Version {version.VERSION}" + (f" · Build {build}" if build else ""))
         theming.role(build_lbl, "secondary")
         layout.addWidget(build_lbl)
 
