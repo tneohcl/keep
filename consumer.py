@@ -430,3 +430,38 @@ def repository_match(record, repository, repository_id):
     if recorded and repository_id:
         return "verified" if recorded == repository_id else None
     return "unverified"
+
+
+# Plain-language reasons for a failed Borg stage, most specific first. Each
+# entry: (reason, patterns); a pattern containing {repo} only matches when
+# the path it reports is inside the repository, so a source file that went
+# missing isn't blamed on the destination.
+FAILURE_REASONS = (
+    ("The backup destination is full. Free up space there, then back up again.",
+     (r"No space left on device", r"Insufficient free space", r"Disk quota exceeded")),
+    ("The saved passphrase doesn't open this backup.",
+     (r"passphrase supplied in BORG_PASSPHRASE.*is incorrect", r"PassphraseWrong")),
+    ("Keep doesn't have permission to write to the backup destination.",
+     (r"Permission denied: '{repo}",)),
+    ("The backup destination is in use by another backup or check. Keep will try again next time.",
+     (r"Failed to create/acquire the lock", r"LockTimeout")),
+    ("The backup destination disconnected during the backup. Reconnect it, then back up again.",
+     (r"No such file or directory: '{repo}", r"Repository .* does not exist", r"Transport endpoint is not connected",
+      r"Input/output error", r"Stale file handle", r"Host is down", r"No route to host",
+      r"Network is unreachable", r"Connection timed out")),
+)
+
+
+def borg_failure_reason(output: str, repository: str | None) -> str | None:
+    """A plain-language reason for a failed Borg stage, from its output, or
+    None when nothing recognisable is there (the log stays the detail)."""
+    repo = re.escape((repository or "").rstrip("/")) if repository else None
+    for reason, patterns in FAILURE_REASONS:
+        for pattern in patterns:
+            if "{repo}" in pattern:
+                if not repo:
+                    continue
+                pattern = pattern.replace("{repo}", repo)
+            if re.search(pattern, output, re.IGNORECASE):
+                return reason
+    return None

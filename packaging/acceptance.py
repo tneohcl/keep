@@ -187,6 +187,9 @@ def show_error(log):
     """Print the error Keep logged, as the person would see it in Show log."""
     errors = [line.split(" ", 1)[-1] for line in log.splitlines() if " ERROR " in f" {line} "]
     print(f"       Keep logged: {errors[0] if errors else '(no ERROR line; the run was cut off)'}")
+    reasons = [line.split(" Reason: ", 1)[1] for line in log.splitlines() if " Reason: " in line]
+    if reasons:
+        print(f"       Reason:      {reasons[-1]}")
 
 
 def recovered(box, config, repo, before):

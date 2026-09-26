@@ -65,7 +65,7 @@ class StatusPageReason(unittest.TestCase):
 
     def log(self, *lines, age=0):
         path = self.logdir / "backup-20260926-040000.log"
-        body = [f"2026-09-26T04:00:00+08:00 Repository: {REPO}", *lines]
+        body = [f"Repository: {REPO}", *lines]
         path.write_text("\n".join(f"2026-09-26T04:00:01+08:00 {line}" for line in body) + "\n")
         if age:
             os.utime(path, (time.time() - age, time.time() - age))

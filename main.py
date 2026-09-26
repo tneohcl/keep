@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import app_logging
 import borg_ops
-from operation_lock import RepositoryLock
+from operation_lock import RepositoryBusy, RepositoryLock
 
 if __name__ == "__main__":
     app_logging.start()
@@ -751,6 +751,40 @@ def backup_history(repository=None, repository_id=None):
     if "STOPPED BY USER" in text:
         return "stopped", ts, verified
     return "FAILED", ts, verified
+
+
+INTERRUPTED_REASON = ("It stopped before finishing: the computer may have shut down or lost power, "
+                      "or the backup was ended. Back up again to make sure your files are saved.")
+QUIET_SECONDS = 60
+
+
+def backup_failure_reason(repository=None, repository_id=None):
+    """A plain-language reason for the newest backup run's failure: the
+    engine's logged "Reason:", or, for a run whose log just stops, that it
+    was interrupted. That's only claimed when nothing can still be writing
+    it: the log has been quiet for a minute and the repository's Keep lock
+    is free. None when there's no reason to add."""
+    path, _ = find_log("backup", repository, repository_id)
+    if not path:
+        return None
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        quiet = time.time() - os.path.getmtime(path) >= QUIET_SECONDS
+    except OSError:
+        return None
+    if "backup completed" in text or "STOPPED BY USER" in text:
+        return None
+    reasons = re.findall(r"^\S+ Reason: (.+)$", text, re.M)
+    if reasons:
+        return reasons[-1].strip()
+    if "Keep backup finished with exit code" in text or not quiet or not repository:
+        return None
+    try:
+        with RepositoryLock(repository):
+            pass
+    except (RepositoryBusy, OSError):
+        return None                     # something holds it: maybe still running
+    return INTERRUPTED_REASON
 
 
 def last_backup_attempt_status(repository=None, repository_id=None):
@@ -3210,6 +3244,10 @@ class MainWindow(QWidget):
             "stopped": ("warning", "The last backup was stopped before it finished"),
             "FAILED": ("error", "The last backup didn't finish. Show the log for details."),
         }.get(verdict, ("never", "Your selected files were saved"))
+        if verdict == "FAILED":
+            reason = backup_failure_reason(REPO or "", repository_id)
+            if reason:
+                description = f"{reason} Show the log for details."
         if not verified and verdict != "FAILED":
             state, description = ("info", UNVERIFIED_HISTORY) if ts else (
                 "never", "Keep can't check the backup history until it can read the backup")

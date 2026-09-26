@@ -466,6 +466,27 @@ def _run_logged(cmd: list[str], log, env: dict, label: str) -> int:
     return rc
 
 
+def _log_size(log) -> int:
+    """Where the next stage's output starts in the run log."""
+    log.flush()
+    return os.fstat(log.fileno()).st_size
+
+
+def _write_reason(log, start: int, repo: str) -> None:
+    """After a failed Borg stage, add a plain-language reason when its output
+    (the part of the log it wrote) shows a recognisable cause."""
+    log.flush()
+    try:
+        with open(log.name, encoding="utf-8", errors="replace") as stream:
+            stream.seek(start)
+            output = stream.read()
+    except OSError:
+        return
+    reason = consumer.borg_failure_reason(output, repo)
+    if reason:
+        _write(log, f"Reason: {reason}")
+
+
 def _borg_rc_failed(rc: int) -> bool:
     # Borg 1.x default/legacy exit codes: 0 success, 1 completed with
     # warnings, 2 fatal error. Keep does not opt into modern detailed codes.
@@ -585,9 +606,11 @@ def _run_with_log(config_path: str, log) -> int:
             ]
             _write(log, "running borg create")
             had_warnings = False
+            stage = _log_size(log)
             rc = _run_create_logged(create, log, env, total)
             if _borg_rc_failed(rc):
                 _write(log, f"ERROR borg create failed (rc={rc})")
+                _write_reason(log, stage, repo)
                 _write(log, "backup aborted; prune/compact were not run")
                 return 3
             if _borg_rc_warned(rc):
@@ -603,9 +626,11 @@ def _run_with_log(config_path: str, log) -> int:
                 repo,
             ]
             _write(log, "running borg prune")
+            stage = _log_size(log)
             rc = _run_logged(prune, log, env, "borg prune")
             if _borg_rc_failed(rc):
                 _write(log, f"ERROR borg prune failed (rc={rc})")
+                _write_reason(log, stage, repo)
                 _write(log, "archive creation succeeded, but retention cleanup did not complete")
                 return 4
             if _borg_rc_warned(rc):
@@ -613,9 +638,11 @@ def _run_with_log(config_path: str, log) -> int:
                 _write(log, "WARNING borg prune completed with warnings")
 
             _write(log, "running borg compact")
+            stage = _log_size(log)
             rc = _run_logged(["borg", "compact", *_lock_args(log), repo], log, env, "borg compact")
             if _borg_rc_failed(rc):
                 _write(log, f"ERROR borg compact failed (rc={rc})")
+                _write_reason(log, stage, repo)
                 _write(log, "archive creation/prune succeeded, but repository space reclamation did not complete")
                 return 5
             if _borg_rc_warned(rc):
