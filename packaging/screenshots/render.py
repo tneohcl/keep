@@ -62,7 +62,6 @@ if "restore" in SHOTS:
     window.pages.setCurrentIndex(0)
     settle(1)
 if "applications" in SHOTS:
-    import applications
     dialog = main.ApplicationSelectionDialog(main.CONFIG, Path.home(), window)
     dialog.resize(760, 560)
     dialog.show()
