@@ -3296,6 +3296,15 @@ try:
         TT_REPO = f"{tt_repo_dir}/repo"
         r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", TT_REPO], env=env_with("phase-tt-pw"), capture_output=True, text=True)
         check("Phase TT setup: init repo for the 'Last attempt:' row check", r.returncode == 0, r.stderr)
+        # Associate the stopped fixture with this repository, as the real
+        # engine does. Untagged logs must not verify an unrelated repository.
+        tt_info = subprocess.run(["borg", "info", "--json", TT_REPO],
+                                 env=env_with("phase-tt-pw"), capture_output=True, text=True)
+        tt_repo_id = json.loads(tt_info.stdout)["repository"]["id"]
+        tt_latest_path = Path(main.latest_log("backup"))
+        tt_latest_path.write_text(tt_latest_path.read_text() +
+                                  f"\n2026-09-14T04:00:00 Repository: {TT_REPO}\n"
+                                  f"2026-09-14T04:00:00 Repository ID: {tt_repo_id}\n")
         RealCONFIG_destination_tt = dict(main.CONFIG["destination"])
         main.CONFIG["destination"] = {"type": "other", "label": "Phase TT Destination", "repo": TT_REPO}
         main.PASSFILE = f"{tt_repo_dir}/passphrase"
