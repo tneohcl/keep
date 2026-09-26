@@ -32,7 +32,9 @@ This report replaces earlier running notes. The UI refactor and maintainability 
 
 ## Remaining desktop acceptance
 
-Container tests do not establish accessibility/screen-reader behavior, real KDE theme changes, unattended systemd timer execution, removable-drive unplug/reconnect behavior or network-loss behavior on a user's machine. App-path coverage also varies by installed application/version. These remain deployment acceptance checks; no bug-free or universal-distribution claim is made.
+Container tests do not establish accessibility/screen-reader behavior, real KDE theme changes, unattended systemd timer execution, removable-drive unplug/reconnect behavior or network-loss behavior on a user's machine.
+
+2026-09-26: `packaging/acceptance.sh` now covers the engine side of the loss scenarios on a real machine (Fedora 44, Borg 1.4.5), all passing. It simulates a network destination (a separate filesystem bind-mounted like a NAS share) that isn't mounted at start, disappears mid-backup, is killed mid-archive, or fills up. In every case the run fails, is never reported as a success, and the Status page reports it as failed; after recovery the next backup succeeds and `borg check` passes. Nothing is written into an unmounted mount folder. Still open: a real USB unplug (removable destinations resolve by UUID through findmnt, not exercised here), a CIFS server that hangs instead of erroring, and plain-language reasons (a full or vanished destination is logged only as `borg create failed (rc=2)`, with Borg's own message further down the log). Unattended timer execution is confirmed on TITAN-i: nightly 04:00 runs succeed. App-path coverage also varies by installed application/version. These remain deployment acceptance checks; no bug-free or universal-distribution claim is made.
 
 See `ARCHITECTURE.md` for module ownership and repeatable validation commands.
 
