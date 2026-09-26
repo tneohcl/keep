@@ -82,6 +82,14 @@ python -m unittest -q test_applications test_release_safety test_theming test_mo
 python test_gui_smoke.py
 ```
 
+Failure-scenario acceptance (Linux, unprivileged; needs `unshare`, `borg` and a PySide6 Python):
+
+```sh
+packaging/acceptance.sh
+```
+
+It runs `keep_backup.py` against throwaway repositories in a user + mount namespace with a temporary HOME, so real config, passphrase, logs and backups are never touched. It covers four cases: the NAS isn't mounted at start, the destination disappears mid-backup, a crash (SIGKILL) mid-archive, and the destination filling up. Each checks that the run is never reported as a success, that the Status page says it failed, and that after recovery the next backup succeeds and `borg check` passes. About 30 seconds.
+
 Full Debian/Borg/FUSE suite and installed-package smoke check:
 
 ```sh
