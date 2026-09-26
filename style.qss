@@ -85,10 +85,10 @@ QCheckBox::indicator:hover, QListView::indicator:hover, QTreeView::indicator:hov
     background: $BG_CONTROL_HOVER;
 }
 QCheckBox::indicator:checked, QListView::indicator:checked, QTreeView::indicator:checked {
-    background: #1769aa; border-color: #1769aa; image: url("$CHECK_PATH");
+    background: $ACCENT; border-color: $ACCENT; image: url("$CHECK_PATH");
 }
 QCheckBox::indicator:checked:hover, QListView::indicator:checked:hover, QTreeView::indicator:checked:hover {
-    background: #2078bc;
+    background: $ACCENT_HOVER;
 }
 QCheckBox::indicator:disabled, QListView::indicator:disabled, QTreeView::indicator:disabled {
     background: $BG_DISABLED; border-color: $TEXT_DISABLED;
@@ -99,4 +99,4 @@ QCheckBox:disabled { color: $TEXT_DISABLED; }
 QListWidget#applicationChoices { background: transparent; border: none; }
 
 QMenu::indicator { width: 16px; height: 16px; border: 1px solid $TEXT_SECONDARY; border-radius: 3px; background: $BG_FIELD; }
-QMenu::indicator:checked { image: url("$CHECK_PATH"); background: #1769aa; border-color: #1769aa; }
+QMenu::indicator:checked { image: url("$CHECK_PATH"); background: $ACCENT; border-color: $ACCENT; }

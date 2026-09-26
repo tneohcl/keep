@@ -193,6 +193,10 @@ def run(repository, passphrase, cancelled=None, borg="borg", chooser=random.choi
             restore_dir.mkdir(mode=0o700)
             runner = _Borg(passphrase, workdir, cancelled, borg)
 
+            rc, info_output, stderr = runner.run(["info", "--json", repository], timeout=300)
+            if rc not in (0, 1):
+                return finish("failed", _classify(stderr))
+            result["repository_id"] = json.loads(info_output).get("repository", {}).get("id")
             rc, stdout, stderr = runner.run(["list", "--last", "1", "--format", "{barchive}{NUL}", repository], timeout=300)
             if rc not in (0, 1):
                 return finish("failed", _classify(stderr))
@@ -240,7 +244,7 @@ def record(result, root=None):
     destination, or an empty backup leave the previous record alone."""
     if result.get("reason") not in RECORDED_REASONS:
         return None
-    kept = {key: result[key] for key in ("result", "reason", "repository", "archive", "finished") if key in result}
+    kept = {key: result[key] for key in ("result", "reason", "repository", "repository_id", "archive", "finished") if key in result}
     path = Path(root or state_root()) / STATE_FILE
     consumer.write_config(path, kept)
     os.chmod(path, 0o600)
@@ -254,12 +258,12 @@ def load(root=None):
         return None
 
 
-def status(record_, repository, now=None):
+def status(record_, repository, now=None, repository_id=None):
     """(state, when-iso-or-None, advice) for the Status page's Recovery tested fact.
 
     state: "never" (no test for THIS repository), "ok", "warning" (passed but
     over six months ago), or "error" (the last test failed)."""
-    if not record_ or record_.get("repository") != repository:
+    if not consumer.matches_repository(record_, repository, repository_id):
         return "never", None, "Restore one file using only your passphrase to prove you can get your files back."
     when = record_.get("finished")
     if record_.get("result") != "passed":
@@ -292,15 +296,17 @@ def _load_all_access(root=None):
         return {}
 
 
-def load_access(repository, root=None):
-    entry = _load_all_access(root).get(repository)
+def load_access(repository, root=None, repository_id=None):
+    entry = _load_all_access(root).get(repository_id) if repository_id else None
     return entry if isinstance(entry, dict) else {}
 
 
-def save_access(repository, changes, root=None):
+def save_access(repository, changes, root=None, repository_id=None):
     """Merge `changes` ({key: iso-date or None to clear}) into this repository's entry."""
+    if not repository_id:
+        return {}
     everything = _load_all_access(root)
-    entry = everything.setdefault(repository, {})
+    entry = everything.setdefault(repository_id, {})
     for key, value in changes.items():
         if value is None:
             entry.pop(key, None)

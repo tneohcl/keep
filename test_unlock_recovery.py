@@ -3553,7 +3553,7 @@ if win_vv is not None:
           win_vv.mounted is True)
     check("Phase VV: restore actually succeeded (no warning about a failed/inaccessible archive)",
           not any(c[0] == "warning" for c in StubQMessageBox_vv.calls), StubQMessageBox_vv.calls)
-    vv_restored_path = f"{VV_DEST}/a_symlink"
+    vv_restored_path = next(iter(glob.glob(f"{VV_DEST}/**/a_symlink", recursive=True)), "")
     check("Phase VV: the restored item exists",
           os.path.exists(vv_restored_path) or os.path.islink(vv_restored_path))
     check("Phase VV: the restored item is STILL a symlink, not dereferenced into a real directory copy (the same bug class already fixed for the curated restore paths - copy_item() checks islink() before isdir())",
@@ -3722,7 +3722,7 @@ if ww_win is not None:
 
         check("Phase WW: Advanced restore_selected() reports success (not a warning) for a broken symlink",
               not any(c[0] == "warning" for c in StubQMessageBox.calls), StubQMessageBox.calls)
-        ww_adv_restored = f"{ww_dest_dir}/broken_link"
+        ww_adv_restored = next(iter(glob.glob(f"{ww_dest_dir}/**/broken_link", recursive=True)), "")
         check("Phase WW: restore_selected() restored the broken symlink AS a symlink (was silently skipped before this fix)",
               os.path.islink(ww_adv_restored), ww_adv_restored)
         if os.path.islink(ww_adv_restored):

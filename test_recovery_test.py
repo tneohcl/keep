@@ -84,35 +84,37 @@ class RecordAndStatus(unittest.TestCase):
         stored = json.loads((self.root / recovery_test.STATE_FILE).read_text())
         self.assertEqual(stored, kept)
         self.assertEqual(set(stored), {"result", "reason", "repository", "archive", "finished"})
-        self.assertEqual((self.root / recovery_test.STATE_FILE).stat().st_mode & 0o777, 0o600)
+        if os.name != "nt":
+            self.assertEqual((self.root / recovery_test.STATE_FILE).stat().st_mode & 0o777, 0o600)
         self.assertEqual(recovery_test.load(self.root), stored)
 
     def test_status_never_ok_stale_and_failed(self):
         now = datetime.datetime(2026, 9, 25, 10, tzinfo=datetime.timezone.utc)
-        passed = {"result": "passed", "repository": "/r", "finished": "2026-09-01T10:00:00+00:00"}
+        passed = {"result": "passed", "repository": "/r", "repository_id": "id-r", "finished": "2026-09-01T10:00:00+00:00"}
         self.assertEqual(recovery_test.status(None, "/r")[0], "never")
         self.assertEqual(recovery_test.status(passed, "/other")[0], "never")  # a test of another repo doesn't count
-        self.assertEqual(recovery_test.status(passed, "/r", now)[0], "ok")
+        self.assertEqual(recovery_test.status(passed, "/r", now, repository_id="id-r")[0], "ok")
         stale = dict(passed, finished="2026-02-01T10:00:00+00:00")
-        self.assertEqual(recovery_test.status(stale, "/r", now)[0], "warning")
+        self.assertEqual(recovery_test.status(stale, "/r", now, repository_id="id-r")[0], "warning")
         failed = dict(passed, result="failed", reason="wrong_passphrase")
-        state, _, advice = recovery_test.status(failed, "/r", now)
+        state, _, advice = recovery_test.status(failed, "/r", now, repository_id="id-r")
         self.assertEqual(state, "error")
         self.assertIn("passphrase", advice)
 
     def test_access_confirmations_are_per_repository_dated_and_expire(self):
-        recovery_test.save_access("/r", {"passphrase_saved": "2026-09-01T10:00:00+00:00"}, self.root)
-        recovery_test.save_access("/other", {"kit_offsite": "2026-09-01T10:00:00+00:00"}, self.root)
-        entry = recovery_test.load_access("/r", self.root)
+        recovery_test.save_access("/r", {"passphrase_saved": "2026-09-01T10:00:00+00:00"}, self.root, repository_id="id-r")
+        recovery_test.save_access("/other", {"kit_offsite": "2026-09-01T10:00:00+00:00"}, self.root, repository_id="id-other")
+        entry = recovery_test.load_access("/r", self.root, repository_id="id-r")
         self.assertEqual(set(entry), {"passphrase_saved"})
         now = datetime.datetime(2026, 9, 25, tzinfo=datetime.timezone.utc)
         self.assertEqual(recovery_test.confirmation(entry, "passphrase_saved", now)[0], "confirmed")
         self.assertEqual(recovery_test.confirmation(entry, "kit_offsite", now)[0], "no")
         later = datetime.datetime(2027, 10, 1, tzinfo=datetime.timezone.utc)
         self.assertEqual(recovery_test.confirmation(entry, "passphrase_saved", later)[0], "stale")
-        recovery_test.save_access("/r", {"passphrase_saved": None}, self.root)
-        self.assertEqual(recovery_test.load_access("/r", self.root), {})
-        self.assertEqual((self.root / recovery_test.ACCESS_FILE).stat().st_mode & 0o777, 0o600)
+        recovery_test.save_access("/r", {"passphrase_saved": None}, self.root, repository_id="id-r")
+        self.assertEqual(recovery_test.load_access("/r", self.root, repository_id="id-r"), {})
+        if os.name != "nt":
+            self.assertEqual((self.root / recovery_test.ACCESS_FILE).stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

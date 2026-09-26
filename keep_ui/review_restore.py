@@ -2,11 +2,12 @@
 anything is. The default is always a new folder, so nothing is overwritten;
 replacing live app data stays a separate, explicit step."""
 import os
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton,
-                               QVBoxLayout)
+                               QVBoxLayout, QScrollArea)
 
 import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
 from odcs_ui.theming import set_role
@@ -26,7 +27,7 @@ class ReviewRestoreDialog(QDialog):
         self.destination = destination
         self.home = home
         self.setWindowTitle("Review restore")
-        self.setFixedWidth(560)
+        self.resize(min(560, int(self.screen().availableGeometry().width() * .9)), 500)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(10)
@@ -44,15 +45,15 @@ class ReviewRestoreDialog(QDialog):
         rows = QVBoxLayout(listing)
         rows.setContentsMargins(12, 8, 12, 8)
         rows.setSpacing(4)
-        for name in items[:SHOWN_ITEMS]:
+        for name in items:
             label = QLabel(name)
             label.setWordWrap(True)
             rows.addWidget(label)
-        if len(items) > SHOWN_ITEMS:
-            more = QLabel(f"and {len(items) - SHOWN_ITEMS} more")
-            set_role(more, "secondary")
-            rows.addWidget(more)
-        layout.addWidget(listing)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(listing)
+        scroll.setMinimumHeight(80)
+        layout.addWidget(scroll, 1)
 
         where = QHBoxLayout()
         where.setSpacing(8)
@@ -102,10 +103,10 @@ class ReviewRestoreDialog(QDialog):
         self.destination_label.setText(display_path(self.destination, self.home))
         self.destination_label.setToolTip(self.destination)
         self.layout().activate()
-        self.setFixedHeight(self.layout().heightForWidth(self.width()))
+        self.resize(self.width(), min(560, int(self.screen().availableGeometry().height() * .85)))
 
     def _change_folder(self):
         chosen = QFileDialog.getExistingDirectory(self, "Restore into folder", str(Path(self.destination).parent))
         if chosen:
-            self.destination = chosen
+            self.destination = str(Path(chosen) / ("Keep-Restored-" + uuid.uuid4().hex[:12]))
             self._show_destination()

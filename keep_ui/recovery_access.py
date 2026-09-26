@@ -10,7 +10,7 @@ import subprocess
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget)
+                               QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget, QScrollArea)
 
 import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
 from odcs_ui.theming import set_role
@@ -45,10 +45,10 @@ def is_encrypted(info):
     return mode.startswith(("repokey", "keyfile"))
 
 
-def summary(repository, now=None):
+def summary(repository, now=None, repository_id=None):
     """(value, state) for the sidebar's Recovery access row."""
-    state, when, _ = recovery_test.status(recovery_test.load(), repository, now)
-    entry = recovery_test.load_access(repository)
+    state, when, _ = recovery_test.status(recovery_test.load(), repository, now, repository_id=repository_id)
+    entry = recovery_test.load_access(repository, repository_id=repository_id)
     unconfirmed = sum(recovery_test.confirmation(entry, key, now)[0] != "confirmed"
                       for key in recovery_test.CONFIRMATIONS)
     if state == "error":
@@ -88,12 +88,19 @@ class RecoveryAccessDialog(QDialog):
         self.repository = repository
         self.destination = destination
         self.info = info
+        self.repository_id = ((info or {}).get("repository") or {}).get("id")
         self.borg_env = borg_env
         self.test_recovery = test_recovery
         self.worker = None
         self.setWindowTitle("Recovery access")
-        self.setFixedWidth(600)
-        layout = QVBoxLayout(self)
+        self.resize(min(600, int(self.screen().availableGeometry().width() * .9)), 650)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(8)
         title = QLabel("Recovery access")
@@ -123,7 +130,7 @@ class RecoveryAccessDialog(QDialog):
                                                    "You'll need your own copy on a new computer.")
         elif not info:
             self._verified_row("Passphrase", "never", "Not checked: the backup couldn't be read.")
-        exported = recovery_test.load_access(repository).get("key_exported")
+        exported = recovery_test.load_access(repository, repository_id=self.repository_id).get("key_exported")
         if is_encrypted(info):
             if exported:
                 self._verified_row("Key file", "ok", f"Exported with Keep {self._friendly(exported)}.")
@@ -140,7 +147,7 @@ class RecoveryAccessDialog(QDialog):
         texts = dict(CONFIRM_TEXT)
         texts["destination_access"] = DESTINATION_ACCESS_TEXT.get(
             destination.get("type"), "I can reach the backup folder from another computer").format(label=label)
-        entry = recovery_test.load_access(repository)
+        entry = recovery_test.load_access(repository, repository_id=self.repository_id)
         for key in recovery_test.CONFIRMATIONS:
             state, when = recovery_test.confirmation(entry, key)
             box = QCheckBox(texts[key])
@@ -152,6 +159,7 @@ class RecoveryAccessDialog(QDialog):
             note.setWordWrap(True)
             note.setVisible(bool(note.text()))
             box.toggled.connect(lambda checked, key=key, note=note: self._confirm(key, checked, note))
+            box.setEnabled(bool(self.repository_id))
             self.confirm_boxes[key] = box
             item = QWidget()
             stack = QVBoxLayout(item)
@@ -210,7 +218,7 @@ class RecoveryAccessDialog(QDialog):
     def _fit(self):
         # Word-wrapped labels in a top-level dialog: size from the real width.
         self.layout().activate()
-        self.setFixedHeight(self.layout().heightForWidth(self.width()))
+        self.resize(self.width(), min(720, int(self.screen().availableGeometry().height() * .85)))
 
     @staticmethod
     def _friendly(iso):
@@ -266,7 +274,7 @@ class RecoveryAccessDialog(QDialog):
     # ---- behaviour -----------------------------------------------------
     def _confirm(self, key, checked, note):
         when = recovery_test.now_iso() if checked else None
-        recovery_test.save_access(self.repository, {key: when})
+        recovery_test.save_access(self.repository, {key: when}, repository_id=self.repository_id)
         note.setText(f"Confirmed {self._friendly(when)}" if checked else "")
         note.setVisible(checked)
         set_role(note, "caption")
@@ -274,7 +282,7 @@ class RecoveryAccessDialog(QDialog):
         self.changed.emit()
 
     def _refresh_test(self):
-        state, when, advice = recovery_test.status(recovery_test.load(), self.repository)
+        state, when, advice = recovery_test.status(recovery_test.load(), self.repository, repository_id=self.repository_id)
         lead = {"never": "Not yet recorded.", "ok": f"Tested {self._friendly(when)}.",
                 "warning": f"Last tested {self._friendly(when)}.", "error": "The last test failed."}[state]
         self.test_icon.setState({"never": "warning"}.get(state, state))
@@ -304,7 +312,7 @@ class RecoveryAccessDialog(QDialog):
         self.export_button.setText("Export key file…")
         self.export_button.setEnabled(True)
         if ok:
-            recovery_test.save_access(self.repository, {"key_exported": recovery_test.now_iso()})
+            recovery_test.save_access(self.repository, {"key_exported": recovery_test.now_iso()}, repository_id=self.repository_id)
             self.changed.emit()
             QMessageBox.information(
                 self, "Keep",
@@ -314,6 +322,7 @@ class RecoveryAccessDialog(QDialog):
             QMessageBox.warning(self, "Keep", f"The key file couldn't be exported.\n\n{message}".strip())
 
     def done(self, result):
-        if self.worker is not None:
-            self.worker.wait()
+        if self.worker is not None and self.worker.isRunning():
+            self.export_button.setText("Finishing export…")
+            return
         super().done(result)

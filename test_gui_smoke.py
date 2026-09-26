@@ -22,6 +22,17 @@ with tempfile.TemporaryDirectory() as directory:
         font_id = QFontDatabase.addApplicationFont("C:/Windows/Fonts/segoeui.ttf")
         assert font_id >= 0
         app.setFont(QFont(QFontDatabase.applicationFontFamilies(font_id)[0], 10))
+    # Health logs must never leak success from another repository or an old ID.
+    scope_logs = Path(directory) / "scoped-logs"
+    scope_logs.mkdir()
+    for name, repo, repo_id in (("01", "/a", "a-id"), ("02", "/b", "b-id")):
+        (scope_logs / f"backup-{name}.log").write_text(
+            f"2026-09-25T08:00:00+08:00 Repository: {repo}\n"
+            f"2026-09-25T08:00:00+08:00 Repository ID: {repo_id}\nbackup completed successfully\n")
+    with patch.object(main, "LOGDIR", str(scope_logs)):
+        assert main.last_backup_attempt_status("/a", "a-id")[0] == "ok"
+        assert main.last_backup_attempt_status("/a", "replacement-id")[0] == "never run"
+        assert main.last_backup_attempt_status("/a", None)[0] == "never run"
     # Large results remain within the screen, with all diagnostics accessible.
     from keep_ui.restore_results import RestoreResultsDialog
     results = RestoreResultsDialog(None, [f"App {i}: /restored/app-{i}" for i in range(300)],
@@ -198,10 +209,35 @@ with tempfile.TemporaryDirectory() as directory:
     # Review restore always defaults to a new Keep-Restored folder and says so.
     from keep_ui.review_restore import ReviewRestoreDialog, display_path
     review = ReviewRestoreDialog([f"item {n}" for n in range(12)], "Today at 8:51 AM", main.new_restore_folder(), main.HOME, window)
-    assert "Keep-Restored" in review.destination and review.destination_label.text().startswith("~/Keep-Restored/")
+    assert "Keep-Restored" in review.destination and review.destination_label.text().replace("\\", "/").startswith("~/Keep-Restored/")
     assert review.restore_button.isDefault() and review.restore_button.property("role") == "primary"
     assert display_path("/elsewhere/x", "/home/me") == "/elsewhere/x"
     review.deleteLater()
+    # Choosing a parent folder must preserve existing content and choose a child.
+    chosen_parent = Path(directory) / "existing-output"
+    chosen_parent.mkdir()
+    with patch("keep_ui.review_restore.QFileDialog.getExistingDirectory", return_value=str(chosen_parent)):
+        review._change_folder()
+    assert Path(review.destination).parent == chosen_parent and not Path(review.destination).exists()
+    # Copying yields to the GUI event loop and finishes before releasing the dialog.
+    from keep_ui.restore_worker import run_restore
+    from keep_ui import safe_copy
+    from PySide6.QtCore import QTimer
+    import time
+    source = Path(directory) / "copy-source"
+    source.write_text("restore bytes")
+    ticks = []
+    timer = QTimer()
+    timer.timeout.connect(lambda: ticks.append(1))
+    timer.start(5)
+    original_copy = safe_copy.copy_new
+    def slow_copy(*args):
+        time.sleep(.05)
+        return original_copy(*args)
+    with patch.object(safe_copy, "copy_new", side_effect=slow_copy):
+        done, failed = run_restore(window, [(source, "file", "File")], str(Path(directory) / "copy-output"))
+    timer.stop()
+    assert done and not failed and ticks, "The UI must process events while restoring"
     window.view_switch.setCurrentIndex(0)
     assert window.btn_backup.property("role") == "primary" and window.btn_review_restore.isHidden()
     # Three separate facts; an untested recovery says so and offers the test.
@@ -244,6 +280,13 @@ with tempfile.TemporaryDirectory() as directory:
         picker.search.setText("fire")
         assert [section.item(i).isHidden() for i in range(section.count())] == [False, True]
         picker.search.setText("")
+        picker.select_all_button.click()
+        picker.search.setText("fire")
+        assert "1 hidden" in picker.selection_summary.text()
+        assert not picker.select_all_button.isEnabled()
+        picker.clear_selection_button.click()
+        assert not picker._all_items(), "Clear must also clear filtered-out selections"
+        picker.search.setText("")
         from PySide6.QtCore import QPoint, QPointF, QEvent
         from PySide6.QtGui import QMouseEvent
 
@@ -262,6 +305,18 @@ with tempfile.TemporaryDirectory() as directory:
         assert section.item(0).checkState() == main.Qt.Checked
         click(section.viewport(), rect.topLeft() + QPoint(18, rect.height() // 2))
         assert section.item(0).checkState() == main.Qt.Unchecked  # the drawn checkbox: exactly one toggle
+        section.item(0).setCheckState(main.Qt.Checked)
+        original_snapshot = tuple(section.item(0).data(main.Qt.UserRole))
+        window._touch_activity()
+        def review_and_reset(dialog):
+            assert not window.unmount_timer.isActive()
+            picker.reset_to_placeholder()
+            return main.QDialog.Accepted
+        with patch.object(main.ReviewRestoreDialog, "exec", review_and_reset), patch.object(picker, "restore_checked_safe") as restore:
+            window.review_restore()
+            restore.assert_called_once()
+            assert restore.call_args.kwargs["entries"][0][1:] == original_snapshot[0]
+        assert window.unmount_timer.isActive()
         window.view_switch.setCurrentIndex(0)
         window.hide()
     # Recovery access: verified facts apart from dated personal confirmations.
@@ -271,13 +326,13 @@ with tempfile.TemporaryDirectory() as directory:
     assert window.recovery_access_row.value() == "Not yet tested"
     access = recovery_access.RecoveryAccessDialog(
         "/fixture/repo", {"available": True, "label": "TITAN-i", "type": "network"},
-        {"encryption": {"mode": "repokey-blake2"}}, 2, "Today at 9:00 AM", main.borg_env, lambda: None, window)
+        {"encryption": {"mode": "repokey-blake2"}, "repository": {"id": "fixture-id"}}, 2, "Today at 9:00 AM", main.borg_env, lambda: None, window)
     assert access.export_button.isEnabled() and access.test_button.property("role") == "primary"
     assert "sign in to TITAN-i" in access.confirm_boxes["destination_access"].text()
     access.confirm_boxes["passphrase_saved"].setChecked(True)
-    assert recovery_test.confirmation(recovery_test.load_access("/fixture/repo"), "passphrase_saved")[0] == "confirmed"
+    assert recovery_test.confirmation(recovery_test.load_access("/fixture/repo", repository_id="fixture-id"), "passphrase_saved")[0] == "confirmed"
     access.confirm_boxes["passphrase_saved"].setChecked(False)
-    assert recovery_test.load_access("/fixture/repo") == {}
+    assert recovery_test.load_access("/fixture/repo", repository_id="fixture-id") == {}
     assert recovery_access.encryption_fact({"encryption": {"mode": "keyfile-blake2"}})[0] == "warning"
     assert recovery_access.encryption_fact(None)[0] == "never"
     access.deleteLater()

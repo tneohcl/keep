@@ -151,7 +151,7 @@ class RestorePicker(QWidget):
             section.blockSignals(True)
             for i in range(section.count()):
                 item = section.item(i)
-                if not item.isHidden():
+                if not checked or not item.isHidden():
                     item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
             section.blockSignals(False)
         self._touch_activity_cb()
@@ -159,10 +159,14 @@ class RestorePicker(QWidget):
 
     def _update_selection_summary(self):
         count = len(self._all_items())
-        total = sum(section.count() for section in self._sections.values())
-        self.select_all_button.setEnabled(total > count)
+        total = sum(not section.item(i).isHidden() and section.item(i).checkState() != Qt.Checked
+                    for section in self._sections.values() for i in range(section.count()))
+        hidden = sum(item.isHidden() for item in self._all_items())
+        self.select_all_button.setEnabled(total > 0)
         self.clear_selection_button.setEnabled(count > 0)
         self.selection_summary.setText(f"{count} item{'s' if count != 1 else ''} selected" if count else "No items selected")
+        if hidden:
+            self.selection_summary.setText(self.selection_summary.text() + f" · {hidden} hidden")
 
     def _apply_view_mode(self):
         for section in self._sections.values():
@@ -309,6 +313,7 @@ class RestorePicker(QWidget):
             if category in self._headers:
                 self._headers[category].setVisible(shown > 0)
             section.fit_height()
+        self._update_selection_summary()
 
     def _all_items(self):
         items = []
