@@ -417,6 +417,16 @@ def render_systemd_units(config: dict, config_path: str, app_dir: str, python_ex
 
 def matches_repository(record, repository, repository_id):
     """A path alone cannot identify a repository recreated in the same place."""
-    return bool(repository_id and isinstance(record, dict)
-                and record.get("repository_id") == repository_id
-                and record.get("repository") == repository)
+    return repository_match(record, repository, repository_id) == "verified"
+
+
+def repository_match(record, repository, repository_id):
+    """"verified" when the record names this repository's ID, "unverified"
+    when it's for this path but the IDs can't be compared (either isn't
+    known), None when it's for another path or another repository."""
+    if not isinstance(record, dict) or record.get("repository") != repository:
+        return None
+    recorded = record.get("repository_id")
+    if recorded and repository_id:
+        return "verified" if recorded == repository_id else None
+    return "unverified"

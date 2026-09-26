@@ -3,11 +3,14 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPlainTextEdit, QDia
 
 
 class RestoreResultsDialog(QDialog):
-    def __init__(self, parent, done, failed, directory, direct=False):
+    def __init__(self, parent, done, failed, directory, direct=False, skipped=()):
         super().__init__(parent)
         self.setWindowTitle("Restore results")
         layout = QVBoxLayout(self)
-        summary = QLabel(f"Restored: {len(done)} · Failed: {len(failed)}")
+        counts = f"Restored: {len(done)} · Failed: {len(failed)}"
+        if skipped:
+            counts += f" · Skipped: {len(skipped)}"
+        summary = QLabel(counts)
         layout.addWidget(summary)
         location = QLabel("Previous content saved to:" if direct else "Restored files saved to:")
         layout.addWidget(location)
@@ -16,7 +19,14 @@ class RestoreResultsDialog(QDialog):
         self.details.setAccessibleName("Restore results and file paths")
         sections = [str(directory)]
         if failed:
-            sections.append("Failed (some files may have been copied):\n" + "\n\n".join(failed))
+            heading = "Failed (some files may have been copied):"
+            if not direct:
+                heading = ("Not finished. Files already copied are complete, and the folder "
+                           "has a RESTORE-INCOMPLETE note:")
+            sections.append(heading + "\n" + "\n\n".join(failed))
+        if skipped:
+            sections.append("Skipped (sockets, pipes and device files can't be restored as files):\n"
+                            + "\n".join(skipped))
         if done:
             sections.append("Restored:\n" + "\n\n".join(done))
         self.details.setPlainText("\n\n".join(sections))
@@ -28,5 +38,5 @@ class RestoreResultsDialog(QDialog):
         self.resize(min(760, int(available.width() * .9)), min(520, int(available.height() * .85)))
 
 
-def show_restore_results(parent, done, failed, directory, direct=False):
-    RestoreResultsDialog(parent, done, failed, directory, direct).exec()
+def show_restore_results(parent, done, failed, directory, direct=False, skipped=()):
+    RestoreResultsDialog(parent, done, failed, directory, direct, skipped).exec()

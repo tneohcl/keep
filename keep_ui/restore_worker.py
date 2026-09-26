@@ -11,13 +11,13 @@ class RestoreWorker(QThread):
         super().__init__()
         self.entries, self.destination = tuple(entries), destination
         self.cancelled = threading.Event()
-        self.result = ([], ["Restore did not finish"])
+        self.result = ([], ["Restore did not finish"], [])
 
     def run(self):
         try:
             self.result = restore_entries(self.entries, self.destination, self.cancelled.is_set, self.progress.emit)
         except Exception as exc:
-            self.result = ([], [str(exc)])
+            self.result = ([], [str(exc)], [])
 
 
 class RestoreProgress(QDialog):

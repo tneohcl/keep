@@ -258,16 +258,30 @@ def load(root=None):
         return None
 
 
+NEVER_TESTED = "Restore one file using only your passphrase to prove you can get your files back."
+
+
 def status(record_, repository, now=None, repository_id=None):
     """(state, when-iso-or-None, advice) for the Status page's Recovery tested fact.
 
     state: "never" (no test for THIS repository), "ok", "warning" (passed but
-    over six months ago), or "error" (the last test failed)."""
-    if not consumer.matches_repository(record_, repository, repository_id):
-        return "never", None, "Restore one file using only your passphrase to prove you can get your files back."
+    over six months ago), "error" (the last test failed), or "info": a test
+    recorded for this location that Keep can't tie to this repository (its ID
+    isn't known yet, or the record predates stored IDs). That's shown as
+    history, never as proof, and a recorded failure is still an error. No
+    date can settle it either way (retention pruning moves the oldest
+    archive), so a new test is what records the ID."""
+    if not isinstance(record_, dict) or record_.get("repository") != repository:
+        return "never", None, NEVER_TESTED
+    recorded_id = record_.get("repository_id")
+    if recorded_id and repository_id and recorded_id != repository_id:
+        return "never", None, NEVER_TESTED
     when = record_.get("finished")
     if record_.get("result") != "passed":
         return "error", when, MESSAGES.get(record_.get("reason"), MESSAGES["unavailable"])
+    if not (recorded_id and repository_id):
+        return "info", when, ("Recorded for this backup location. Keep will confirm it belongs to this "
+                              "backup once it can read it.")
     try:
         finished = datetime.datetime.fromisoformat(when)
         now = now or datetime.datetime.now(finished.tzinfo)
@@ -294,6 +308,13 @@ def _load_all_access(root=None):
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def legacy_access(repository, root=None):
+    """Confirmations saved before Keep stored repository IDs (keyed by path).
+    History only: they are never counted as confirmed for a repository."""
+    entry = _load_all_access(root).get(repository) if repository else None
+    return entry if isinstance(entry, dict) else {}
 
 
 def load_access(repository, root=None, repository_id=None):
