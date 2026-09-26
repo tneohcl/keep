@@ -25,12 +25,16 @@ class LocalTime(unittest.TestCase):
         self.addCleanup(patcher.stop)
         time.tzset()
 
+    # The clock's format follows the locale (6:25 AM here, 06:25:00 on CI),
+    # so compare with the same moment written as naive local time.
     def test_utc_is_shown_in_local_time(self):
-        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14.753626+00:00"), "Sep 25, 2020 at 6:25\u202fAM")
+        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14.753626+00:00"),
+                         main.friendly_datetime(datetime(2020, 9, 25, 6, 25, 14)))
 
     def test_local_offsets_and_naive_times_are_unchanged(self):
-        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14+08:00"), "Sep 24, 2020 at 10:25\u202fPM")
-        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14.000000"), "Sep 24, 2020 at 10:25\u202fPM")
+        local = main.friendly_datetime(datetime(2020, 9, 24, 22, 25, 14))
+        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14+08:00"), local)
+        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14.000000"), local)
 
     def test_today_is_judged_in_local_time(self):
         now = datetime.now().astimezone()
