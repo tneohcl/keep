@@ -141,9 +141,9 @@ keep-cli doctor          # check the destination, Borg and the timer setup
 |---|---|
 | [Detailed guide](docs/GUIDE.md) | Configuration, destinations, restore and unlocking in depth |
 | [Disaster recovery](DISASTER_RECOVERY.md) | Restore on a new computer with only Borg |
-| [Command line](CLI.md) | `keep-cli` reference |
-| [Architecture](ARCHITECTURE.md) | Modules, extension rules, validation |
-| [Release readiness](RELEASE_READINESS.md) | Validation evidence and open gates |
+| [Command line](docs/CLI.md) | `keep-cli` reference |
+| [Architecture](docs/ARCHITECTURE.md) | Modules, extension rules, validation |
+| [Release readiness](docs/RELEASE_READINESS.md) | Validation evidence and open gates |
 
 ## Development
 

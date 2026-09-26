@@ -35,7 +35,7 @@ import types
 from datetime import datetime, timedelta
 from pathlib import Path
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"

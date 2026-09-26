@@ -113,7 +113,7 @@ class DebianPackageContents(unittest.TestCase):
         # installed by build-deb.sh, so the packaged app, CLI and scheduled
         # engine failed to start.
         import re
-        root = Path(__file__).resolve().parent
+        root = Path(__file__).resolve().parent.parent
         script = (root / "packaging" / "build-deb.sh").read_text()
         installed = set(re.findall(r"\b(\w+)\.py\b", script.split('"$stage/usr/lib/keep/"')[0]))
         local = {p.stem for p in root.glob("*.py") if not p.stem.startswith("test_")}
