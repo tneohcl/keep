@@ -33,6 +33,19 @@ class ThemeTests(unittest.TestCase):
         self.assertFalse(theming.resolve_dark(light_desktop, "nonsense"))
         self.assertNotEqual(theming.stylesheet(light_desktop, "dark"), theming.stylesheet(light_desktop, "light"))
 
+    def test_icon_theme_follows_the_chosen_theme(self):
+        # Symbolic icons are drawn for one background: a Light Keep on a dark
+        # desktop needs the light variant of the icon theme (breeze, not breeze-dark).
+        from unittest.mock import patch
+        seen = []
+        try:
+            with patch.object(theming.odcs_theming, "match_icon_theme", seen.append):
+                theming.install(self.app, "light")
+                theming.install(self.app, "dark")
+        finally:
+            theming.install(self.app, "system")
+        self.assertEqual(seen[-2:], ["light", "dark"])
+
     def test_theme_round_trip(self):
         original = self.app.palette()
         results = []

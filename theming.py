@@ -73,6 +73,9 @@ class ThemeController(QObject):
             # odcs widgets that paint their own colours (status icons) read these.
             odcs_theming._CURRENT.clear()
             odcs_theming._CURRENT.update(values)
+            # Light or dark variant of the desktop's icon theme, before the
+            # stylesheet below makes widgets redraw.
+            odcs_theming.match_icon_theme("dark" if resolve_dark(self.app.palette(), self.choice) else "light")
             qss = stylesheet(self.app.palette(), self.choice)
             if qss != self.current:
                 self.current = qss
