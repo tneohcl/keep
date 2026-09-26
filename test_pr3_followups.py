@@ -100,61 +100,67 @@ class UnknownIdentityHeadline(unittest.TestCase):
 
 
 class LegacyRecords(unittest.TestCase):
-    """Issue 2: records written before Keep stored repository IDs."""
-
-    # Borg reports archive times without a timezone, in local time: build the
-    # oldest archive's naive local time in whatever zone the tests run in.
-    OLDEST_ARCHIVE = (datetime.fromisoformat("2026-09-25T06:14:48+08:00")
-                      .astimezone().replace(tzinfo=None).isoformat())
+    """Issue 2 (and review of #4): records written before Keep stored
+    repository IDs are history. Nothing about their dates can verify or
+    disqualify them (retention pruning moves the oldest archive forward), so
+    they are kept as they are and shown as unverified until a new test,
+    check or confirmation records the ID."""
 
     def setUp(self):
-        self.root = tempfile.mkdtemp()
+        self.root = Path(tempfile.mkdtemp())
+        patcher = patch.dict(os.environ, {"XDG_STATE_HOME": str(self.root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.state = self.root / "keep"
+        self.state.mkdir()
 
-    def legacy_test(self, finished):
-        record = {"result": "passed", "reason": "passed", "repository": REPO,
-                  "archive": "keep-a", "finished": finished}
-        Path(self.root, recovery_test.STATE_FILE).write_text(json.dumps(record))
-        return record
+    def write(self, name, data):
+        path = self.state / name
+        path.write_text(json.dumps(data))
+        return path
 
-    def test_record_newer_than_the_oldest_archive_is_carried_forward(self):
-        self.legacy_test("2026-09-25T21:37:48+08:00")
-        recovery_test.adopt_legacy_records(REPO, REPO_ID, self.OLDEST_ARCHIVE, self.root)
-        record = recovery_test.load(self.root)
-        self.assertEqual(record["repository_id"], REPO_ID)
-        self.assertEqual(recovery_test.status(record, REPO, repository_id=REPO_ID)[0], "ok")
+    def legacy_test(self, finished="2026-09-25T21:37:48+08:00", result="passed"):
+        return {"result": result, "reason": result, "repository": REPO, "archive": "keep-a", "finished": finished}
 
-    def test_record_older_than_the_oldest_archive_stays_historical(self):
-        self.legacy_test("2026-09-20T10:00:00+08:00")
-        recovery_test.adopt_legacy_records(REPO, REPO_ID, self.OLDEST_ARCHIVE, self.root)
-        record = recovery_test.load(self.root)
-        self.assertNotIn("repository_id", record)          # retained, not rewritten or deleted
-        state, when, advice = recovery_test.status(record, REPO, repository_id=REPO_ID)
-        self.assertEqual(state, "never")
-        self.assertIn("earlier", advice)
+    def test_legacy_record_is_unverified_history(self):
+        for finished in ("2026-09-25T21:37:48+08:00", "2020-01-01T00:00:00+00:00"):
+            state, when, _ = recovery_test.status(self.legacy_test(finished), REPO, repository_id=REPO_ID)
+            self.assertEqual((state, when), ("info", finished))
+        self.assertEqual(recovery_test.status(self.legacy_test(result="failed"), REPO, repository_id=REPO_ID)[0], "error")
+        self.assertEqual(recovery_test.status(self.legacy_test(), "/elsewhere", repository_id=REPO_ID)[0], "never")
 
-    def test_unverified_record_is_shown_as_history_not_as_never(self):
-        record = self.legacy_test("2026-09-25T21:37:48+08:00")
-        state, when, advice = recovery_test.status(record, REPO, repository_id=None)
-        self.assertEqual((state, when), ("info", "2026-09-25T21:37:48+08:00"))
-        stamped = dict(record, repository_id=REPO_ID)
-        self.assertEqual(recovery_test.status(stamped, REPO)[0], "info")    # ID not known yet
+    def test_repository_query_leaves_legacy_records_untouched(self):
+        # The oldest surviving archive is newer than the (valid) test: pruning.
+        test = self.write(recovery_test.STATE_FILE, self.legacy_test())
+        access = self.write(recovery_test.ACCESS_FILE, {REPO: {"passphrase_saved": "2026-09-25T08:30:00+08:00"}})
+        check = self.write("last-check.json", {"repository": REPO, "result": "success",
+                                               "finished": "2026-09-25T12:03:00+08:00"})
+        before = {path: path.read_text() for path in (test, access, check)}
+        with patch.object(main.MainWindow, "refresh_status", lambda self: None):
+            window = main.MainWindow()
+        self.addCleanup(window.deleteLater)
+        window._pending_select_latest = False       # set by a real query start
+        with patch.object(main, "REPO", REPO), patch.object(main, "DEST_STATUS", {"available": True, "repo": REPO}):
+            window._on_status_query_finished(REPO, {"repository": {"id": REPO_ID}},
+                                             {"archives": [{"name": "newest", "start": "2027-04-01T04:00:00"}]}, False)
+        self.assertEqual({path: path.read_text() for path in before}, before)
+        self.assertEqual(window.status_facts.facts["recovery"]["icon"].state(), "info")
+        self.assertEqual(window.status_facts.facts["check"]["icon"].state(), "info")
 
-    def test_access_confirmations_are_carried_forward_by_date(self):
-        path = Path(self.root, recovery_test.ACCESS_FILE)
-        path.write_text(json.dumps({REPO: {"passphrase_saved": "2026-09-25T08:30:00+08:00",
-                                           "key_exported": "2026-09-24T10:00:00+08:00"}}))
-        recovery_test.adopt_legacy_records(REPO, REPO_ID, self.OLDEST_ARCHIVE, self.root)
-        entry = recovery_test.load_access(REPO, self.root, repository_id=REPO_ID)
-        self.assertEqual(entry, {"passphrase_saved": "2026-09-25T08:30:00+08:00"})
-        self.assertIn(REPO, json.loads(path.read_text()))   # the legacy entry is retained
+    def test_legacy_confirmations_are_history_not_confirmations(self):
+        self.write(recovery_test.ACCESS_FILE, {REPO: {"passphrase_saved": "2026-09-25T08:30:00+08:00"}})
+        self.assertEqual(recovery_test.load_access(REPO, repository_id=REPO_ID), {})
+        self.assertEqual(recovery_test.legacy_access(REPO), {"passphrase_saved": "2026-09-25T08:30:00+08:00"})
+        recovery_test.save_access(REPO, {"kit_offsite": "2026-09-26T09:00:00+08:00"}, repository_id=REPO_ID)
+        saved = json.loads((self.state / recovery_test.ACCESS_FILE).read_text())
+        self.assertEqual(saved[REPO], {"passphrase_saved": "2026-09-25T08:30:00+08:00"})    # kept as is
+        self.assertEqual(saved[REPO_ID], {"kit_offsite": "2026-09-26T09:00:00+08:00"})
 
-    def test_integrity_check_record_is_carried_forward(self):
-        check = Path(self.root, "last-check.json")
-        check.write_text(json.dumps({"repository": REPO, "deep": False, "result": "success",
-                                     "started": "2026-09-25T12:00:00+08:00",
-                                     "finished": "2026-09-25T12:03:00+08:00"}))
-        recovery_test.adopt_legacy_records(REPO, REPO_ID, self.OLDEST_ARCHIVE, self.root)
-        self.assertEqual(json.loads(check.read_text())["repository_id"], REPO_ID)
+    def test_unknown_current_id_shows_history(self):
+        stamped = dict(self.legacy_test(), repository_id=REPO_ID)
+        self.assertEqual(recovery_test.status(stamped, REPO)[0], "info")
+        self.assertEqual(recovery_test.status(stamped, REPO, repository_id=REPO_ID)[0], "ok")
+        self.assertEqual(recovery_test.status(stamped, REPO, repository_id=OTHER_ID)[0], "never")
 
 
 class IncompleteRestore(unittest.TestCase):
@@ -190,6 +196,55 @@ class IncompleteRestore(unittest.TestCase):
         done, failed, skipped = restore_entries([(self.src, "big.bin", "Big")], dest)
         self.assertEqual((len(done), failed, skipped), (1, [], []))
         self.assertEqual(sorted(p.name for p in dest.iterdir()), ["big.bin"])
+
+
+class RestoreNameCollisions(unittest.TestCase):
+    """Review of #4: Keep's own temporary files and marker must never touch
+    restored content, whatever names the backup contains."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def source(self, name, text):
+        path = self.root / "src" / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text)
+        return path
+
+    def test_temporary_name_in_the_backup_is_never_deleted(self):
+        partial = self.source(".report.keep-partial", "a real file")
+        report = self.source("report", "the report")
+        dest = self.root / "restore"
+        done, failed, skipped = restore_entries(
+            [(partial, ".report.keep-partial", "A"), (report, "report", "B")], dest)
+        self.assertEqual((len(done), failed), (2, []))
+        self.assertEqual((dest / ".report.keep-partial").read_text(), "a real file")
+        self.assertEqual((dest / "report").read_text(), "the report")
+        self.assertEqual(sorted(p.name for p in dest.iterdir()), [".report.keep-partial", "report"])
+
+    def test_marker_never_overwrites_a_restored_file(self):
+        mine = self.source("RESTORE-INCOMPLETE.txt", "my own notes")
+        dest = self.root / "restore"
+        done, failed, skipped = restore_entries(
+            [(mine, "RESTORE-INCOMPLETE.txt", "Notes"), (self.root / "missing", "missing", "Missing")], dest)
+        self.assertEqual((len(done), len(failed)), (1, 1))
+        self.assertEqual((dest / "RESTORE-INCOMPLETE.txt").read_text(), "my own notes")
+        markers = [p for p in dest.iterdir() if p.name != "RESTORE-INCOMPLETE.txt"]
+        self.assertEqual(len(markers), 1)
+        self.assertTrue(markers[0].name.startswith("RESTORE-INCOMPLETE"))
+        self.assertIn("did not finish", markers[0].read_text())
+
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation requires privileges")
+    def test_marker_never_follows_a_restored_symlink(self):
+        outside = self.root / "outside.txt"
+        outside.write_text("untouched")
+        link = self.root / "src" / "RESTORE-INCOMPLETE.txt"
+        link.parent.mkdir()
+        link.symlink_to(outside)
+        dest = self.root / "restore"
+        restore_entries([(link, "RESTORE-INCOMPLETE.txt", "Link"), (self.root / "missing", "missing", "Missing")], dest)
+        self.assertEqual(outside.read_text(), "untouched")
+        self.assertTrue((dest / "RESTORE-INCOMPLETE.txt").is_symlink())
 
 
 @unittest.skipUnless(hasattr(os, "mkfifo"), "needs FIFOs")
