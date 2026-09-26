@@ -42,7 +42,15 @@ def copy_new(source, target, cancelled, skipped=None):
         # symlink), so whatever names the backup contains can't collide with it.
         fd, partial = tempfile.mkstemp(prefix=PARTIAL_PREFIX, dir=target.parent)
         try:
-            with source.open('rb') as src, os.fdopen(fd, 'wb') as dst:
+            # Own the descriptor before anything else can fail (opening the
+            # source included): leaving the with block always closes it, and
+            # only then can the cleanup below remove the file on Windows.
+            try:
+                dst = os.fdopen(fd, 'wb')
+            except BaseException:
+                os.close(fd)
+                raise
+            with dst, source.open('rb') as src:
                 while True:
                     if cancelled():
                         raise CopyCancelled()
