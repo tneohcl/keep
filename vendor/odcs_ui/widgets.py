@@ -340,30 +340,26 @@ class StatusFacts(QFrame):
         desc_label.setWordWrap(True)
         when_label = QLabel(when or self.NEVER)
         set_role(when_label, "secondary")
-        for col, widget in enumerate((icon, title_label, desc_label, when_label)):
-            cell = QFrame()
-            cell.setObjectName("odcsFactCell")
-            lay = QHBoxLayout(cell)
-            lay.setContentsMargins(0, 8, 10, 8)
-            lay.addWidget(widget)
-            self._grid.addWidget(cell, row, col)
-            cells.append(cell)
         button = None
-        if not action:  # keep the hairline running under the action column
-            filler = QFrame()
-            filler.setObjectName("odcsFactCell")
-            self._grid.addWidget(filler, row, 4)
-            cells.append(filler)
         if action:
             button = QPushButton(action[0])
             button.setAutoDefault(False)
             button.clicked.connect(action[1])
+        for col, widget in enumerate((icon, title_label, desc_label, when_label)):
             cell = QFrame()
             cell.setObjectName("odcsFactCell")
-            lay = QHBoxLayout(cell)
-            lay.setContentsMargins(0, 4, 0, 4)
-            lay.addWidget(button)
-            self._grid.addWidget(cell, row, 4)
+            lay = QVBoxLayout(cell)
+            lay.setContentsMargins(0, 8, 10, 8)
+            lay.setSpacing(6)
+            # Top-aligned, so a two-line fact keeps its icon, title and date
+            # level with the first line.
+            lay.setAlignment(Qt.AlignTop)
+            lay.addWidget(widget)
+            if widget is desc_label and button is not None:
+                # The fact's action sits under its description, on the same
+                # left edge, rather than in a column of its own.
+                lay.addWidget(button, 0, Qt.AlignLeft)
+            self._grid.addWidget(cell, row, col)
             cells.append(cell)
         # Separators run between facts, not under the last one.
         for previous in self._rows[-1:]:
