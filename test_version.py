@@ -26,8 +26,9 @@ class BuildInfo(unittest.TestCase):
 
     def test_packaged_build_info_is_shown_in_local_time(self):
         (self.root / "BUILD_INFO").write_text(json.dumps({"built": "2026-09-26T07:28:49+00:00", "by": "Flatpak"}))
+        import time
+        self.addCleanup(time.tzset)             # after patch.dict restores TZ
         with patch.dict(os.environ, {"TZ": "Asia/Singapore"}):
-            import time
             time.tzset()
             self.assertEqual(version.build_info(self.root), "2026-09-26 15:28 · Flatpak")
 
