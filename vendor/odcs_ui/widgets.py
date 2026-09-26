@@ -46,6 +46,10 @@ class ViewSwitch(QFrame):
         super().__init__(parent)
         self.setObjectName("odcsViewSwitch")
         self.setAccessibleName(accessible_name)
+        # Hug the segments: in a taller row (a toolbar with larger buttons) a
+        # stretched frame put the extra height above and below them, so the
+        # 2 px inset looked wider at the top and bottom than at the sides.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(2)
