@@ -59,6 +59,17 @@ class HostAppsFromInsideTheFlatpak(unittest.TestCase):
         self.assertTrue(installed.entry_installed(entries["firefox"]))
         self.assertTrue(installed.entry_installed(entries["path:.config/inkscape"]))
 
+    def test_absolute_symlinked_executables_resolve_on_the_host(self):
+        # Like RustDesk: /usr/bin/rustdesk -> /usr/share/rustdesk/rustdesk. Followed
+        # inside the sandbox, that absolute target is the runtime's /usr.
+        real = self.host_root / "usr/share/keepprobeapp/keepprobeapp"
+        real.parent.mkdir(parents=True)
+        real.write_text("#!/bin/sh\n")
+        real.chmod(0o755)
+        (self.host_root / "usr/bin/keepprobeapp").symlink_to("/usr/share/keepprobeapp/keepprobeapp")
+        desktop(self.host_root / "usr/share/applications/keepprobeapp.desktop", "Keep Probe App", "keepprobeapp %u")
+        self.assertTrue(applications.InstalledApps(self.home).contains("keepprobeapp"))
+
     def test_flatpak_names_come_from_the_system_exports(self):
         # A distinctive name: display_name otherwise falls back to guessing from the ID.
         self.assertEqual(applications.display_name("org.mozilla.firefox", self.home), "Firefox Web Browser")
