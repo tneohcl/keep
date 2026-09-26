@@ -36,7 +36,7 @@ modules:
       - mkdir -p /app/share/keep
       - cp -r *.py keep_ui vendor style.qss check.svg chevron-down.svg LICENSE README.md DISASTER_RECOVERY.md /app/share/keep/
       - rm -f /app/share/keep/test_*.py
-      - printf '{"built": "%s", "by": "Flatpak"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > /app/share/keep/BUILD_INFO
+      - 'printf ''{"built": "%s", "by": "Flatpak"}\n'' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > /app/share/keep/BUILD_INFO'
       - install -Dm755 packaging/flatpak/keep.sh /app/bin/keep
       - ln -s keep /app/bin/keep-backup
       - ln -s keep /app/bin/keep-cli
