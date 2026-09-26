@@ -56,7 +56,7 @@ class CLITests(unittest.TestCase):
         bindir.mkdir()
         marker = self.root / "child-started"
         fake = bindir / "borg"
-        fake.write_text("#!/usr/bin/python3\nfrom pathlib import Path\nimport time\nPath(" + repr(str(marker)) + ").touch()\ntime.sleep(60)\n")
+        fake.write_text("#!/usr/bin/python3\nfrom pathlib import Path\nimport time, sys, json\nif sys.argv[1] == 'info':\n print(json.dumps({'repository': {'id': 'fixture-id'}})); sys.exit(0)\nPath(" + repr(str(marker)) + ").touch()\ntime.sleep(60)\n")
         fake.chmod(0o755)
         env = dict(self.env, PATH=str(bindir) + os.pathsep + self.env.get("PATH", ""))
         process = subprocess.Popen([sys.executable, "-S", "cli.py", "--config", str(self.config), "check", "--json"],

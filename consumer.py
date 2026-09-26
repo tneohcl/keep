@@ -413,3 +413,10 @@ def render_systemd_units(config: dict, config_path: str, app_dir: str, python_ex
     schedule = config.get("schedule", {})
     timer = f"""[Unit]\nDescription=Run Keep backup automatically\n\n[Timer]\nOnCalendar={on_calendar(schedule)}\nPersistent=true\nAccuracySec=1m\nUnit=keep-backup.service\n\n[Install]\nWantedBy=timers.target\n"""
     return service, timer
+
+
+def matches_repository(record, repository, repository_id):
+    """A path alone cannot identify a repository recreated in the same place."""
+    return bool(repository_id and isinstance(record, dict)
+                and record.get("repository_id") == repository_id
+                and record.get("repository") == repository)

@@ -2730,19 +2730,21 @@ class PPHeadlineProbe(QWidget):
     def __init__(self):
         super().__init__()
         self.lbl_headline = main.QLabel()
+        from keep_ui.status_icons import SuccessBadge
+        self.headline_icon = SuccessBadge("never", 48)
 
 
 pp_unavailable = PPHeadlineProbe()
 pp_unavailable._apply_status_headline(False, "ok", "2026-09-14T04:00:00")
 check("Phase PP: headline - destination unavailable beats everything else, is truthful (not 'needs attention')",
-      pp_unavailable.lbl_headline.text() == "! Backup destination unavailable")
+      pp_unavailable.lbl_headline.text() == "Backup destination unavailable")
 check("Phase PP: headline - destination-unavailable state is colored as destructive",
       pp_unavailable.lbl_headline.property("role") == "error")
 
 pp_failed = PPHeadlineProbe()
 pp_failed._apply_status_headline(True, "FAILED", "2026-09-14T04:00:00")
 check("Phase PP: headline - failed last attempt is truthful ('Last backup failed', not 'needs attention'), with no timestamp (duplicates 'Last attempt:'/'Last backup:' rows already visible below it - reviewer round 6)",
-      pp_failed.lbl_headline.text() == "! Last backup failed")
+      pp_failed.lbl_headline.text() == "Last backup failed")
 check("Phase PP: headline - failed state is colored as destructive",
       pp_failed.lbl_headline.property("role") == "error")
 
@@ -2754,11 +2756,17 @@ check("Phase PP: headline - never-run state is neutral, not alarming",
 pp_ok = PPHeadlineProbe()
 pp_ok._apply_status_headline(True, "ok", "2026-09-14T04:00:00")
 check("Phase PP: headline - the healthy state is truthful ('completed successfully', never 'up to date' - that claims a currentness guarantee this data doesn't verify), with no timestamp (duplicate of the row below it - reviewer round 6)",
-      pp_ok.lbl_headline.text() == "✓ Last backup completed successfully")
+      pp_ok.lbl_headline.text() == "Last backup completed successfully")
 check("Phase PP: headline - 'up to date' phrasing never appears anywhere in this method's output",
       "up to date" not in pp_ok.lbl_headline.text().lower())
 check("Phase PP: headline - the healthy state is NOT colored as destructive",
       pp_ok.lbl_headline.property("role") != "error")
+
+check("Phase PP: success badge is only green for successful backup",
+      pp_ok.headline_icon.state() == "ok" and
+      pp_failed.headline_icon.state() == "error" and
+      pp_unavailable.headline_icon.state() == "error" and
+      pp_never.headline_icon.state() == "never")
 
 pp_content = main.QLabel("real content")
 pp_section = main.DisclosureSection("Show X", "Hide X", pp_content)
@@ -3137,10 +3145,10 @@ if win_ss is not None:
     # Apple-esque hierarchy this whole redesign already established ---
     win_ss._apply_status_headline(True, "FAILED", "2026-09-14T04:00:00")
     check("Phase SS: the FAILED headline no longer carries a duplicate timestamp",
-          win_ss.lbl_headline.text() == "! Last backup failed", win_ss.lbl_headline.text())
+          win_ss.lbl_headline.text() == "Last backup failed", win_ss.lbl_headline.text())
     win_ss._apply_status_headline(True, "ok", "2026-09-14T04:00:00")
     check("Phase SS: the healthy headline no longer carries a duplicate timestamp",
-          win_ss.lbl_headline.text() == "✓ Last backup completed successfully", win_ss.lbl_headline.text())
+          win_ss.lbl_headline.text() == "Last backup completed successfully", win_ss.lbl_headline.text())
 main.CONFIG["destination"] = RealCONFIG_destination_ss
 
 print("=== Phase TT: a manually Stopped backup is distinguished from a genuinely FAILED one ===")
@@ -3288,6 +3296,15 @@ try:
         TT_REPO = f"{tt_repo_dir}/repo"
         r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", TT_REPO], env=env_with("phase-tt-pw"), capture_output=True, text=True)
         check("Phase TT setup: init repo for the 'Last attempt:' row check", r.returncode == 0, r.stderr)
+        # Associate the stopped fixture with this repository, as the real
+        # engine does. Untagged logs must not verify an unrelated repository.
+        tt_info = subprocess.run(["borg", "info", "--json", TT_REPO],
+                                 env=env_with("phase-tt-pw"), capture_output=True, text=True)
+        tt_repo_id = json.loads(tt_info.stdout)["repository"]["id"]
+        tt_latest_path = Path(main.latest_log("backup"))
+        tt_latest_path.write_text(tt_latest_path.read_text() +
+                                  f"\n2026-09-14T04:00:00 Repository: {TT_REPO}\n"
+                                  f"2026-09-14T04:00:00 Repository ID: {tt_repo_id}\n")
         RealCONFIG_destination_tt = dict(main.CONFIG["destination"])
         main.CONFIG["destination"] = {"type": "other", "label": "Phase TT Destination", "repo": TT_REPO}
         main.PASSFILE = f"{tt_repo_dir}/passphrase"
@@ -3553,7 +3570,7 @@ if win_vv is not None:
           win_vv.mounted is True)
     check("Phase VV: restore actually succeeded (no warning about a failed/inaccessible archive)",
           not any(c[0] == "warning" for c in StubQMessageBox_vv.calls), StubQMessageBox_vv.calls)
-    vv_restored_path = f"{VV_DEST}/a_symlink"
+    vv_restored_path = next(iter(glob.glob(f"{VV_DEST}/**/a_symlink", recursive=True)), "")
     check("Phase VV: the restored item exists",
           os.path.exists(vv_restored_path) or os.path.islink(vv_restored_path))
     check("Phase VV: the restored item is STILL a symlink, not dereferenced into a real directory copy (the same bug class already fixed for the curated restore paths - copy_item() checks islink() before isdir())",
@@ -3722,7 +3739,7 @@ if ww_win is not None:
 
         check("Phase WW: Advanced restore_selected() reports success (not a warning) for a broken symlink",
               not any(c[0] == "warning" for c in StubQMessageBox.calls), StubQMessageBox.calls)
-        ww_adv_restored = f"{ww_dest_dir}/broken_link"
+        ww_adv_restored = next(iter(glob.glob(f"{ww_dest_dir}/**/broken_link", recursive=True)), "")
         check("Phase WW: restore_selected() restored the broken symlink AS a symlink (was silently skipped before this fix)",
               os.path.islink(ww_adv_restored), ww_adv_restored)
         if os.path.islink(ww_adv_restored):

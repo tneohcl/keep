@@ -63,8 +63,12 @@ def main(argv=None):
                 health_file = state_root() / "last-check.json"
                 if health_file.exists():
                     health = json.loads(health_file.read_text(encoding="utf-8"))
-                    if health.get("repository") == dest.get("repo"):
-                        result["last_integrity_check"] = health
+                    if dest.get("available"):
+                        rc, output, _ = borg_ops.run_borg(["info", "--json", "--lock-wait", "1", dest["repo"]],
+                                                         borg_ops.credential_environment(), timeout=10)
+                        identity = json.loads(output).get("repository", {}).get("id") if rc == 0 else None
+                        if consumer.matches_repository(health, dest.get("repo"), identity):
+                            result["last_integrity_check"] = health
                 if args.command == "doctor":
                     result["platform_supported"] = sys.platform.startswith("linux")
                     units = Path.home() / ".config/systemd/user"
@@ -91,15 +95,18 @@ def main(argv=None):
                         if args.deep:
                             arguments.append("--verify-data")
                         arguments.append(repo)
+                        rc, output, _ = borg_ops.run_borg(["info", "--json", "--lock-wait", "5", repo], env)
+                        # A damaged repository may fail info but still needs a check.
+                        repository_id = json.loads(output).get("repository", {}).get("id") if rc == 0 else None
                         started = datetime.now(timezone.utc).isoformat()
-                        check_record = {"repository": repo, "deep": args.deep, "started": started, "result": "running"}
+                        check_record = {"repository": repo, "repository_id": repository_id, "deep": args.deep, "started": started, "result": "running"}
                         state_root().mkdir(parents=True, exist_ok=True, mode=0o700)
                         consumer.write_config(state_root() / "last-check.json", check_record)
                         # Keep raw Borg diagnostics out of JSON and private logs.
                         with tempfile.TemporaryFile(mode="w+") as diagnostics:
                             rc, _, _ = borg_ops.run_borg(arguments, env, timeout=None, progress=diagnostics)
                         code = 0 if rc == 0 else 1 if rc == 1 else 2
-                        result = {"repository": repo, "deep": args.deep, "started": started,
+                        result = {"repository": repo, "repository_id": repository_id, "deep": args.deep, "started": started,
                                   "finished": datetime.now(timezone.utc).isoformat(), "borg_exit_code": rc,
                                   "result": "success" if code == 0 else "warning" if code == 1 else "failed"}
                         root = state_root()

@@ -17,6 +17,7 @@ from keep_ui.restore_results import show_restore_results
 from keep_ui.application_selection import ApplicationSelectionDialog
 from keep_ui.recovery_test_dialog import RecoveryTestDialog
 from keep_ui import recovery_access
+from keep_ui.restore_worker import run_restore
 from keep_ui.review_restore import ReviewRestoreDialog
 from keep_ui.backup_list import BackupListPanel
 import recovery_test
@@ -30,6 +31,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 import theming  # also puts the bundled vendor/odcs_ui on sys.path
 from odcs_ui import timefmt as odcs_timefmt
 from odcs_ui.widgets import ViewSwitch
@@ -611,7 +613,7 @@ def friendly_datetime(dt):
 
 def new_restore_folder():
     """A fresh, clearly-labelled folder for restored copies - never a live path."""
-    return os.path.join(HOME, "Keep-Restored", datetime.now().strftime("%Y%m%d-%H%M%S"))
+    return os.path.join(HOME, "Keep-Restored", datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])
 
 
 def friendly_timestamp(iso_string):
@@ -650,13 +652,23 @@ def friendly_systemd_timestamp(text):
     return friendly_datetime(dt)
 
 
-def latest_log(prefix):
-    files = sorted(glob.glob(f"{LOGDIR}/{prefix}-*.log"))
-    return files[-1] if files else None
+def latest_log(prefix, repository=None, repository_id=None):
+    files = sorted(glob.glob(f"{LOGDIR}/{prefix}-*.log"), reverse=True)
+    for path in files:
+        if repository is not None:
+            try:
+                with open(path, encoding="utf-8", errors="replace") as stream:
+                    logged_path, logged_id = _consumer_module._log_repository(stream.read(16384))
+            except OSError:
+                continue
+            if not repository_id or logged_id != repository_id or logged_path != repository:
+                continue
+        return path
+    return None
 
 
-def log_verdict(prefix, pass_markers, fail_markers):
-    path = latest_log(prefix)
+def log_verdict(prefix, pass_markers, fail_markers, repository=None, repository_id=None):
+    path = latest_log(prefix, repository, repository_id)
     if not path:
         return "never run", None
     text = Path(path).read_text()
@@ -671,7 +683,7 @@ def log_verdict(prefix, pass_markers, fail_markers):
     return "unknown", ts
 
 
-def last_backup_attempt_status():
+def last_backup_attempt_status(repository=None, repository_id=None):
     """The newest archive tells you the last SUCCESSFUL backup - not whether
     the most recent scheduled attempt actually worked. A failed run creates
     no new archive at all, so "last successful" alone can look healthy on a
@@ -688,7 +700,7 @@ def last_backup_attempt_status():
     this is a pure text check like the others - no shared in-memory state
     with the worker, safe to call any time, from any process, exactly like
     the existing checks."""
-    path = latest_log("backup")
+    path = latest_log("backup", repository, repository_id)
     if not path:
         return "never run", None
     text = Path(path).read_text()
@@ -1007,48 +1019,37 @@ class ItemPicker(RestorePicker):
         else:
             shutil.copy2(src, dest)
 
-    def restore_checked_safe(self, dest_dir=None):
+    def restore_checked_safe(self, dest_dir=None, entries=None):
         """No destination picker needed - lands in a clearly-labelled, always-new
         review folder (or the folder Review restore… was pointed at). Never touches the live path, so there's nothing to
         confirm and nothing that can be lost by picking the wrong archive."""
         app_logging.record("operation.requested", operation="safe_restore")
-        checked = self._checked_items()
-        if not checked:
-            return
-        # extract plain data BEFORE ensure_mounted_cb() - if the mount had
-        # idled out while the user was still picking items, that call
-        # remounts and repopulates the sections, invalidating these
-        # QListWidgetItem objects. The archive content itself doesn't change
-        # on remount, so plain (identity, rel_path, live_target) tuples stay
-        # valid even after the widgets underneath them get rebuilt.
-        entries = [(item.data(Qt.UserRole + 1), rel_path, live_target)
-                   for item in checked
-                   for rel_path, live_target in item.data(Qt.UserRole)]
+        if entries is None:
+            checked = self._checked_items()
+            if not checked:
+                return
+            entries = [(item.data(Qt.UserRole + 1), rel_path, live_target)
+                       for item in checked
+                       for rel_path, live_target in item.data(Qt.UserRole)]
         if not self._ensure_mounted_cb():
             QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
             return
         dest_dir = dest_dir or new_restore_folder()
-        done, failed = [], []
-        for identity, rel_path, live_target in entries:
-            src = f"{MOUNTPOINT}/{rel_path}"
-            # lexists(), not exists() - exists() follows symlinks, so a
-            # legitimately-archived symlink whose target no longer exists
-            # (a broken symlink is a valid filesystem object, not an
-            # error) would read as "not there" and get silently skipped
-            # instead of restored as the symlink it actually is.
-            if not os.path.lexists(src):
-                continue
-            # last TWO path segments, not just the basename - a cross-install
-            # app's config/<folder> and data/<folder> share the same basename
-            # ("<folder>"), which previously collapsed both into one path and
-            # silently merged config and data content together
-            disambiguated = live_target.strip("/").split("/")[-2:]
-            dest = os.path.join(dest_dir, identity.replace("/", "_"), *disambiguated)
-            try:
-                copy_item(src, dest)
-                done.append(f"{identity}: {dest}  (live equivalent: {live_target})")
-            except Exception as e:
-                failed.append(f"{identity}: {e}")
+        plan = [(f"{MOUNTPOINT}/{rel_path}",
+                 os.path.join(identity.replace("/", "_"), *live_target.strip("/").split("/")[-2:]), identity)
+                for identity, rel_path, live_target in entries]
+        controller = self.window()
+        timer = getattr(controller, "unmount_timer", None)
+        if timer:
+            timer.stop()
+        previous_busy = getattr(controller, "_repo_op_running", False)
+        controller._repo_op_running = True
+        try:
+            done, failed = run_restore(self, plan, dest_dir)
+        finally:
+            controller._repo_op_running = previous_busy
+            if timer:
+                controller._touch_activity()
         app_logging.record("operation.finished", operation="safe_restore", result="partial_failure" if failed else "success", count=len(done), failed=len(failed))
         show_restore_results(self, done, failed, dest_dir)
 
@@ -3003,18 +3004,22 @@ class MainWindow(QWidget):
         "failed" after an intentional action undermines trust in what red
         actually means elsewhere in this app. Neutral styling, calm
         wording, same as "never run"."""
+        state = ("error" if not dest_available or verdict == "FAILED" else
+                 "warning" if verdict == "warning" else
+                 "never" if verdict in ("stopped", "never run") else "ok")
+        self.headline_icon.setState(state)
         if not dest_available:
-            self.lbl_headline.setText("! Backup destination unavailable")
+            self.lbl_headline.setText("Backup destination unavailable")
             theming.role(self.lbl_headline, "error")
         elif verdict == "FAILED":
             # no timestamp here - it's the exact same value already shown
             # right below in "Last attempt:" (and, in the common healthy
             # case, in "Last backup:" too); repeating it in the one line
             # meant to be readable at a glance just adds noise
-            self.lbl_headline.setText("! Last backup failed")
+            self.lbl_headline.setText("Last backup failed")
             theming.role(self.lbl_headline, "error")
         elif verdict == "warning":
-            self.lbl_headline.setText("! Backup completed with warnings")
+            self.lbl_headline.setText("Backup completed with warnings")
             theming.role(self.lbl_headline, "")
         elif verdict == "stopped":
             self.lbl_headline.setText("Backup was stopped")
@@ -3023,7 +3028,7 @@ class MainWindow(QWidget):
             self.lbl_headline.setText("No backups yet")
             theming.role(self.lbl_headline, "")
         else:
-            self.lbl_headline.setText("✓ Last backup completed successfully")
+            self.lbl_headline.setText("Last backup completed successfully")
             theming.role(self.lbl_headline, "")
 
     def _refresh_setup_labels(self):
@@ -3134,11 +3139,15 @@ class MainWindow(QWidget):
                 timestamp.setText("No activity yet")
                 outcome.setText("Your backup results will appear here.")
 
+    def _current_repository_id(self):
+        repo, info, _, _ = getattr(self, "_verified_repo_info", (None, None, None, None))
+        return ((info or {}).get("repository") or {}).get("id") if repo == REPO else None
+
     def _refresh_facts(self, dest):
         """Backup completed / Integrity checked / Recovery tested, each with its
         own result and date, from the same sources as the Details rows."""
         facts = self.status_facts
-        verdict, ts = last_backup_attempt_status()
+        verdict, ts = last_backup_attempt_status(REPO or "", self._current_repository_id())
         state, description = {
             "ok": ("ok", "Your selected files were saved"),
             "warning": ("warning", "Finished with warnings. Show the log for details."),
@@ -3146,17 +3155,25 @@ class MainWindow(QWidget):
             "FAILED": ("error", "The last backup didn't finish. Show the log for details."),
         }.get(verdict, ("never", "Your selected files were saved"))
         facts.setFact("backup", state, friendly_timestamp(ts) if ts else "", description)
+        self.lbl_last_attempt.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else "Not yet verified for this repository")
+        theming.role(self.lbl_last_attempt, "error" if state == "error" else "")
+        self.lbl_check.setText("Not yet verified for this repository")
+        self.lbl_verify.setText("Not yet verified for this repository")
 
         checks = []
         for prefix in ("check", "check-verify-data"):
-            outcome, when = log_verdict(prefix, ["completed successfully in", "Repository check complete"], ["FAILED"])
+            outcome, when = log_verdict(prefix, ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", self._current_repository_id())
             if when:
                 checks.append((outcome, when))
+                label = self.lbl_verify if prefix == "check-verify-data" else self.lbl_check
+                label.setText(f"{outcome} ({friendly_timestamp(when)})")
         health_path = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "keep/last-check.json"
         try:
             health = json.loads(health_path.read_text(encoding="utf-8"))
-            if health.get("repository") == dest.get("repo") and (health.get("finished") or health.get("started")):
+            if _consumer_module.matches_repository(health, dest.get("repo"), self._current_repository_id()) and (health.get("finished") or health.get("started")):
                 checks.append((health.get("result", "unknown"), health.get("finished") or health.get("started")))
+                label = self.lbl_verify if health.get("deep") else self.lbl_check
+                label.setText(f"{checks[-1][0]} ({friendly_timestamp(checks[-1][1])})")
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -3180,9 +3197,12 @@ class MainWindow(QWidget):
             facts.setFact("check", "never", "", "Stored data is readable and consistent")
 
         record = recovery_test.load()
-        state, when, advice = recovery_test.status(record, dest.get("repo"))
+        state, when, advice = recovery_test.status(record, dest.get("repo"), repository_id=self._current_repository_id())
         facts.setFact("recovery", state, friendly_timestamp(when) if when else "", advice)
-        self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo")))
+        self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"), repository_id=self._current_repository_id()))
+        if state == "never":
+            self.lbl_restore_test.setText("Not yet verified for this repository")
+            theming.role(self.lbl_restore_test, "")
         if state != "never":
             self.lbl_restore_test.setText(f"{record.get('result')} ({friendly_timestamp(when)})")
             theming.role(self.lbl_restore_test, "error" if state == "error" else "")
@@ -3195,7 +3215,7 @@ class MainWindow(QWidget):
         dialog = recovery_access.RecoveryAccessDialog(
             dest.get("repo"), dest, info if dest["available"] else None, archive_count,
             friendly_timestamp(verified) if verified else None, borg_env, self.test_recovery, self)
-        dialog.changed.connect(lambda: self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"))))
+        dialog.changed.connect(lambda: self.recovery_access_row.setValue(*recovery_access.summary(dest.get("repo"), repository_id=self._current_repository_id())))
         dialog.exec()
 
     def test_recovery(self):
@@ -3247,7 +3267,7 @@ class MainWindow(QWidget):
 
         # local-only, fast - stays synchronous. Only the NAS-dependent Borg
         # info/list calls below move to a background worker.
-        verdict, ts = last_backup_attempt_status()
+        verdict, ts = last_backup_attempt_status(REPO or "", self._current_repository_id())
         self.lbl_last_attempt.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
         theming.role(self.lbl_last_attempt, "error" if verdict == "FAILED" else "")
         self._apply_status_headline(dest["available"], verdict, ts)
@@ -3270,18 +3290,18 @@ class MainWindow(QWidget):
             except Exception:
                 self.lbl_next.setText("unknown")
 
-        verdict, ts = log_verdict("check", ["completed successfully in", "Repository check complete"], ["FAILED"])
+        verdict, ts = log_verdict("check", ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", self._current_repository_id())
         self.lbl_check.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
-        verdict, ts = log_verdict("check-verify-data", ["completed successfully in", "Repository check complete"], ["FAILED"])
+        verdict, ts = log_verdict("check-verify-data", ["completed successfully in", "Repository check complete"], ["FAILED"], REPO or "", self._current_repository_id())
         self.lbl_verify.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
-        verdict, ts = log_verdict("restore-test", ["restore test passed"], ["restore test FAILED", "FAIL:"])
+        verdict, ts = log_verdict("restore-test", ["restore test passed"], ["restore test FAILED", "FAIL:"], REPO or "", self._current_repository_id())
         self.lbl_restore_test.setText(f"{verdict} ({friendly_timestamp(ts)})" if ts else verdict)
         theming.role(self.lbl_restore_test, "error" if verdict == "FAILED" else "")
         # CLI check outcomes are independent of backup success and match this repo.
         health_path = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "keep/last-check.json"
         try:
             health = json.loads(health_path.read_text(encoding="utf-8"))
-            if health.get("repository") == dest.get("repo"):
+            if _consumer_module.matches_repository(health, dest.get("repo"), self._current_repository_id()):
                 label = self.lbl_verify if health.get("deep") else self.lbl_check
                 outcome = health.get("result", "unknown")
                 timestamp = health.get("finished") or health.get("started")
@@ -3375,6 +3395,9 @@ class MainWindow(QWidget):
         self._verified_repo_info = (queried_repo, info, len(listing.get("archives", [])) if listing else None,
                                     datetime.now().astimezone().isoformat(timespec="seconds"))
         self._refresh_activity()  # now that the repository ID is known
+        self._refresh_facts(DEST_STATUS)
+        verdict, ts = last_backup_attempt_status(REPO or "", self._current_repository_id())
+        self._apply_status_headline(DEST_STATUS["available"], verdict, ts)
         if info:
             stats = info.get("cache", {}).get("stats", {})
             size_gb = stats.get("unique_csize", 0) / (1024**3)
@@ -4507,63 +4530,63 @@ class MainWindow(QWidget):
                                     else "Select one or more files or folders first (Ctrl+click or Shift+click for several).")
             return
         archive = self.friendly_archive(self.archive_combo.currentText()) if self.archive_combo.currentText() else "this backup"
-        dialog = ReviewRestoreDialog(names, archive, new_restore_folder(), HOME, self)
-        if dialog.exec() != QDialog.Accepted:
-            return
+        # A modal review runs a nested event loop. Pin the selection and archive
+        # by pausing idle unmount, and reject if another callback changes it.
+        self._stop_status_query()
+        repository, archive_name = REPO, self.archive_combo.currentText()
         if picker is not None:
-            picker.restore_checked_safe(dest_dir=dialog.destination)
+            checked = picker._checked_items()
+            if not checked:
+                return
+            plan = tuple((item.data(Qt.UserRole + 1), rel, live)
+                         for item in checked for rel, live in item.data(Qt.UserRole))
         else:
-            self.restore_selected(dest_dir=dialog.destination)
+            plan = tuple(os.path.relpath(self.fs_model.filePath(index), MOUNTPOINT)
+                         for index in self.tree.selectionModel().selectedRows())
+        self.unmount_timer.stop()
+        try:
+            dialog = ReviewRestoreDialog(names, archive, new_restore_folder(), HOME, self)
+            if dialog.exec() != QDialog.Accepted:
+                return
+            if REPO != repository or self.archive_combo.currentText() != archive_name:
+                QMessageBox.warning(self, "Keep", "The backup changed. Review your selection again.")
+                return
+            if picker is not None:
+                picker.restore_checked_safe(dest_dir=dialog.destination, entries=plan)
+            else:
+                self.restore_selected(dest_dir=dialog.destination, rel_paths=plan)
+        finally:
+            self._touch_activity()
 
-    def restore_selected(self, dest_dir=None):
+
+    def restore_selected(self, dest_dir=None, rel_paths=None):
         app_logging.record("operation.requested", operation="file_restore")
-        rows = self.tree.selectionModel().selectedRows()
-        if not rows:
-            QMessageBox.information(self, "Keep", "Select one or more files/folders in the browser first (Ctrl+click or Shift+click for several).")
-            return
-        # capture plain relative-path strings BEFORE ensure_mounted() - same
-        # reasoning as restore_checked_safe(): a remount rebuilds fs_model's
-        # state (ensure_mounted() re-populates the OTHER tabs too), so
-        # holding onto these QModelIndex objects across that call risks
-        # acting on stale/invalidated indexes. Paths relative to MOUNTPOINT
-        # stay valid regardless of what the model does underneath - the
-        # archive's own content doesn't change on a remount of the SAME
-        # archive, only the model's in-memory state does.
-        rel_paths = [os.path.relpath(self.fs_model.filePath(idx), MOUNTPOINT) for idx in rows]
-        # the curated restore paths (Apps/Projects) already re-verify the
-        # mount is actually still there immediately before reading from it -
-        # this tab was missing that entirely, so an idle-unmount between
-        # selecting files and clicking Restore could silently read (or fail
-        # to read) from a stale/gone mount.
+        if rel_paths is None:
+            rows = self.tree.selectionModel().selectedRows()
+            if not rows:
+                QMessageBox.information(self, "Keep", "Select one or more files/folders first.")
+                return
+            rel_paths = [os.path.relpath(self.fs_model.filePath(idx), MOUNTPOINT) for idx in rows]
         if not self.ensure_mounted():
             QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
             return
         sources = [f"{MOUNTPOINT}/{rel_path}" for rel_path in rel_paths]
         if not dest_dir:  # also False when called straight from a button's clicked(bool)
             dest_dir = QFileDialog.getExistingDirectory(self, f"Restore {len(sources)} item(s) to folder (a copy, not the live location)")
+            if dest_dir:
+                dest_dir = os.path.join(dest_dir, os.path.basename(new_restore_folder()))
         if not dest_dir:
             return
-        done, failed = [], []
-        for src in sources:
-            # lexists(), not exists() - exists() follows symlinks, so a
-            # broken symlink (a legitimate archived object whose target
-            # happens to be gone) would read as "no longer exists" and
-            # get skipped instead of restored as the symlink it is
-            if not os.path.lexists(src):
-                failed.append(f"{os.path.basename(src)}: no longer exists in this archive")
-                continue
-            dest = os.path.join(dest_dir, os.path.basename(src))
-            try:
-                # copy_item() checks islink() before isdir() - isdir()
-                # follows symlinks, so a symlink-to-a-directory here would
-                # otherwise be dereferenced into a real directory copy
-                # instead of preserving that it was a symlink at all (the
-                # same bug class already fixed for the curated restore
-                # paths - this tab was missing that fix too).
-                copy_item(src, dest)
-                done.append(dest)
-            except Exception as e:
-                failed.append(f"{os.path.basename(src)}: {e}")
+        # Preserve archive-relative paths, so equal basenames never collide.
+        plan = [(src, rel, rel) for src, rel in zip(sources, rel_paths)]
+        self.unmount_timer.stop()
+        previous_busy = self._repo_op_running
+        self._repo_op_running = True
+        try:
+            done, failed = run_restore(self, plan, dest_dir)
+        finally:
+            self._repo_op_running = previous_busy
+            self._touch_activity()
         app_logging.record("operation.finished", operation="file_restore", result="partial_failure" if failed else "success", count=len(done), failed=len(failed))
         show_restore_results(self, done, failed, dest_dir)
 
