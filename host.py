@@ -52,12 +52,17 @@ def backup_command(config_path):
 
 
 def system_path(path):
-    """Where a host system path (/usr/..., /var/lib/flatpak/...) is found
-    from here: the host's /usr family is under HOST_ROOT inside a Flatpak."""
+    """Where a host system path (/usr/..., /etc/alternatives/...,
+    /var/lib/flatpak/...) is found from here: inside a Flatpak, the host's /usr
+    family and /etc/alternatives are under HOST_ROOT."""
     if flatpak_id():
         if path.startswith("/var/lib/flatpak"):
             return SYSTEM_FLATPAK + path[len("/var/lib/flatpak"):]
         if path.split("/")[1:2] and path.split("/")[1] in ("usr", "bin", "sbin", "lib", "lib64", "lib32"):
+            return HOST_ROOT + path
+        # host-os also shows the host's /etc/alternatives (and only that part
+        # of /etc), where executables often link through.
+        if path == "/etc/alternatives" or path.startswith("/etc/alternatives/"):
             return HOST_ROOT + path
     return path
 
