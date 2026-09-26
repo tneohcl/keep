@@ -1,6 +1,7 @@
 """The Status | Restore switch heads the sidebar, as wide as the cards under
-it, and the Restore sidebar keeps its heading at the top when there are no
-backups yet."""
+it, the Restore sidebar keeps its heading at the top when there are no
+backups yet, and a short window scrolls the Status sidebar rather than clip
+its rows."""
 import os
 from pathlib import Path
 import tempfile
@@ -85,6 +86,67 @@ class EmptyRestoreSidebar(unittest.TestCase):
     def test_backups_fill_the_height(self):
         panel = self.panel([(f"Backup {n}", "detail", f"keep-{n}") for n in range(3)])
         self.assertGreater(panel.list.height(), 400)
+
+
+class ShortStatusSidebar(unittest.TestCase):
+    """Large text or a short screen: the rows keep their full height, wrapped
+    values included, and the sidebar scrolls. Regression: the rows were
+    squeezed and the second line of Recovery access was clipped."""
+
+    def setUp(self):
+        with patch.object(main.MainWindow, "refresh_status", lambda self: None):
+            self.window = main.MainWindow()
+        self.addCleanup(self.window.close)
+        panel = self.window.backup_panel
+        panel.destination_choice.setValue("NAS share · Synology-DS920plus-Living-Room · /volume1/backups")
+        panel.recovery_access_row.setValue("Tested · not yet verified · 2 to confirm on this computer")
+        self.window.pages.setCurrentIndex(0)
+        self.window.resize(1000, 200)  # as short as the window allows
+        self.window.show()
+        APP.processEvents()
+
+    def rows(self):
+        panel = self.window.backup_panel
+        return panel.plan_panel.rows + panel.recovery_panel.rows
+
+    def test_rows_keep_their_full_height(self):
+        for row in self.rows():
+            with self.subTest(row=row.label()):
+                self.assertGreaterEqual(row.height(), row.heightForWidth(row.width()))
+                self.assertGreaterEqual(row._value.height(), row._value.heightForWidth(row._value.width()))
+
+    def test_a_wrapped_value_really_wraps(self):
+        value = self.window.backup_panel.recovery_access_row._value
+        self.assertGreater(value.heightForWidth(value.width()), 1.5 * value.fontMetrics().lineSpacing())
+
+    def test_the_sidebar_scrolls_to_its_last_row(self):
+        scroll = self.window.status_sidebar
+        self.assertTrue(scroll.verticalScrollBar().isVisible())
+        self.assertTrue(scroll.isAncestorOf(self.window.backup_panel))
+        last = self.window.backup_panel.recovery_access_row
+        scroll.ensureWidgetVisible(last, 0, 0)
+        APP.processEvents()
+        bottom = last.mapTo(scroll.viewport(), last.rect().bottomLeft()).y()
+        self.assertLessEqual(bottom, scroll.viewport().height())
+
+    def test_cards_stay_as_wide_as_the_switch_beside_a_scroll_bar(self):
+        card = self.window.backup_panel.findChild(QFrame, "odcsSettingsList")
+        self.assertEqual(span(card, self.window), span(self.window.view_switch, self.window))
+        bar = self.window.status_sidebar.verticalScrollBar()
+        self.assertGreaterEqual(bar.mapTo(self.window, bar.rect().topLeft()).x(), span(card, self.window)[1])
+
+    def test_margin_returns_when_the_window_grows(self):
+        self.window.resize(1000, 1600)
+        APP.processEvents()
+        card = self.window.backup_panel.findChild(QFrame, "odcsSettingsList")
+        self.assertFalse(self.window.status_sidebar.verticalScrollBar().isVisible())
+        self.assertEqual(self.window.backup_panel.layout().contentsMargins().right(), 16)
+        self.assertEqual(span(card, self.window), span(self.window.view_switch, self.window))
+
+    def test_no_sideways_scrolling(self):
+        scroll = self.window.status_sidebar
+        self.assertFalse(scroll.horizontalScrollBar().isVisible())
+        self.assertLessEqual(self.window.backup_panel.width(), scroll.viewport().width())
 
 
 if __name__ == "__main__":

@@ -273,7 +273,7 @@ with tempfile.TemporaryDirectory() as directory:
         window.view_switch.setCurrentIndex(1)
         assert window.sidebar_stack.currentWidget() is window.backup_list_panel
         window.view_switch.setCurrentIndex(0)
-        assert window.sidebar_stack.currentWidget() is window.backup_panel
+        assert window.sidebar_stack.currentWidget() is window.status_sidebar and window.status_sidebar.widget() is window.backup_panel
         # Search hides tiles (and empty sections); a click anywhere on a tile toggles it once.
         picker = window.apps_picker
         picker._installed_apps_provider = None  # don't depend on what this machine has installed

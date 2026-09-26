@@ -19,9 +19,10 @@ class BackupPanel(QWidget):
 
     def __init__(self, controller):
         super().__init__()
+        # No fixed width: MainWindow puts this in a 300 px scroll area, and a
+        # scroll bar, when large text needs one, takes its share.
         self.setObjectName("keepSidebar")
         set_surface(self, "window")
-        self.setFixedWidth(300)
         shell = QVBoxLayout(self)
         shell.setContentsMargins(16, 20, 16, 20)
         shell.setSpacing(16)

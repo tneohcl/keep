@@ -149,7 +149,9 @@ class SettingRow(QPushButton):
         super().__init__(parent)
         self.setObjectName("odcsSettingRow")
         self.setAutoDefault(False)
-        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Minimum, not Fixed: a Fixed row is capped at its one-line size hint,
+        # so a layout could not give a wrapped value its height-for-width.
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         policy.setHeightForWidth(True)  # grows only as much as a wrapped value needs
         self.setSizePolicy(policy)
         self._icon = QLabel()
@@ -261,7 +263,9 @@ class SettingsList(QFrame):
             outer.addWidget(title)
         self._box = QFrame()
         self._box.setObjectName("odcsSettingsList")
-        self._box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        # Minimum: the rows' own base.qss `min-height: 0` lets each shrink to
+        # nothing, so the box holds them at full size and never squeezes them.
+        self._box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         self._rows_layout = QVBoxLayout(self._box)
         self._rows_layout.setContentsMargins(1, 1, 1, 1)
         self._rows_layout.setSpacing(0)
