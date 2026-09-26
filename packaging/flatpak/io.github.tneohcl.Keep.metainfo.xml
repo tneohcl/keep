@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.tneohcl.Keep</id>
+  <name>Keep</name>
+  <summary>Back up and recover your files</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.tneohcl">
+    <name>ODCS App Studio</name>
+  </developer>
+  <description>
+    <p>Keep backs up your folders and application data with BorgBackup, on a schedule, to a network share or a drive. It checks that your backups can be read and helps you prove you can restore them with only your passphrase.</p>
+  </description>
+  <launchable type="desktop-id">io.github.tneohcl.Keep.desktop</launchable>
+  <url type="homepage">https://github.com/tneohcl/keep</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.9.2" date="2026-09-26"/>
+  </releases>
+</component>

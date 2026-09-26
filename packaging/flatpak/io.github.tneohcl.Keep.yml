@@ -1,0 +1,52 @@
+# Keep as a Flatpak. Build and install for the current user:
+#   flatpak run org.flatpak.Builder --user --install --force-clean \
+#       --install-deps-from=flathub build-flatpak packaging/flatpak/io.github.tneohcl.Keep.yml
+# A backup app has to read nearly everything, so like Vorta and Pika Backup it
+# gets host filesystem access (plus ~/.var/app, which "host" leaves out), /dev
+# for FUSE, and the Flatpak portal for the few host tools it runs (host.py).
+app-id: io.github.tneohcl.Keep
+runtime: org.kde.Platform
+runtime-version: '6.11'
+sdk: org.kde.Sdk
+base: io.qt.PySide.BaseApp
+base-version: '6.11'
+command: keep
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=all
+  - --filesystem=host
+  - --filesystem=~/.var/app
+  - --talk-name=org.freedesktop.Flatpak
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - dependencies/libfuse.json
+  - dependencies/host-command-wrapper.json
+  - dependencies/python3-pkgconfig.json
+  - dependencies/pyfuse3.json
+  - dependencies/borgbackup.json
+  - name: keep
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/share/keep
+      - cp -r *.py keep_ui vendor style.qss check.svg chevron-down.svg LICENSE README.md DISASTER_RECOVERY.md /app/share/keep/
+      - rm -f /app/share/keep/test_*.py
+      - install -Dm755 packaging/flatpak/keep.sh /app/bin/keep
+      - ln -s keep /app/bin/keep-backup
+      - ln -s keep /app/bin/keep-cli
+      - install -Dm644 packaging/flatpak/io.github.tneohcl.Keep.desktop /app/share/applications/io.github.tneohcl.Keep.desktop
+      - install -Dm644 packaging/flatpak/io.github.tneohcl.Keep.metainfo.xml /app/share/metainfo/io.github.tneohcl.Keep.metainfo.xml
+      - install -Dm644 packaging/flatpak/io.github.tneohcl.Keep.svg /app/share/icons/hicolor/scalable/apps/io.github.tneohcl.Keep.svg
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .venv
+          - .git
+          - build-flatpak
+          - .flatpak-builder
+          - dist
+          - ui-review
