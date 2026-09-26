@@ -8,7 +8,7 @@ QWidget#summarySurface, QWidget#factsSurface, QWidget#historySurface, QWidget#re
 QLabel { background: transparent; border: none; }
 /* ODCS window model: toolbar over a sidebar + content split (odcs-ui DESIGN.md). */
 QWidget#keepToolbar { background: $BG_WINDOW; border-bottom: 1px solid $BORDER_OUTER; }
-QWidget#keepSidebar { background: $BG_WINDOW; border-right: 1px solid $BORDER_OUTER; }
+QWidget#keepSidebar, QWidget#keepSidebarHead { background: $BG_WINDOW; border-right: 1px solid $BORDER_OUTER; }
 QStackedWidget#keepContent { background: $BG_PANEL; }
 /* Inside a card the facts heading matches the other card titles. */
 QWidget#factsSurface QLabel#odcsGroupHeading { color: $TEXT_PRIMARY; padding: 0; }

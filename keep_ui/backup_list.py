@@ -86,6 +86,10 @@ class BackupListPanel(QWidget):
         self.caption.setWordWrap(True)
         set_role(self.caption, "caption")
         layout.addWidget(self.caption)
+        # Takes the spare height only while the list (stretch 1) is hidden, so
+        # with no backups the labels stay at the top instead of sharing the
+        # whole panel, each ~200 px tall with its text centred.
+        layout.addStretch()
         self._syncing = False
         self.set_backups([], -1)
 
