@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -30,6 +31,7 @@ class BuildInfo(unittest.TestCase):
             time.tzset()
             self.assertEqual(version.build_info(self.root), "2026-09-26 15:28 · Flatpak")
 
+    @unittest.skipUnless(shutil.which("git"), "needs git (the CI image has none)")
     def test_source_checkout_shows_its_commit(self):
         run = lambda *args: subprocess.run(["git", *args], cwd=self.root, capture_output=True, check=True)
         run("init", "-q")
