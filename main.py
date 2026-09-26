@@ -3004,18 +3004,22 @@ class MainWindow(QWidget):
         "failed" after an intentional action undermines trust in what red
         actually means elsewhere in this app. Neutral styling, calm
         wording, same as "never run"."""
+        state = ("error" if not dest_available or verdict == "FAILED" else
+                 "warning" if verdict == "warning" else
+                 "never" if verdict in ("stopped", "never run") else "ok")
+        self.headline_icon.setState(state)
         if not dest_available:
-            self.lbl_headline.setText("! Backup destination unavailable")
+            self.lbl_headline.setText("Backup destination unavailable")
             theming.role(self.lbl_headline, "error")
         elif verdict == "FAILED":
             # no timestamp here - it's the exact same value already shown
             # right below in "Last attempt:" (and, in the common healthy
             # case, in "Last backup:" too); repeating it in the one line
             # meant to be readable at a glance just adds noise
-            self.lbl_headline.setText("! Last backup failed")
+            self.lbl_headline.setText("Last backup failed")
             theming.role(self.lbl_headline, "error")
         elif verdict == "warning":
-            self.lbl_headline.setText("! Backup completed with warnings")
+            self.lbl_headline.setText("Backup completed with warnings")
             theming.role(self.lbl_headline, "")
         elif verdict == "stopped":
             self.lbl_headline.setText("Backup was stopped")
@@ -3024,7 +3028,7 @@ class MainWindow(QWidget):
             self.lbl_headline.setText("No backups yet")
             theming.role(self.lbl_headline, "")
         else:
-            self.lbl_headline.setText("✓ Last backup completed successfully")
+            self.lbl_headline.setText("Last backup completed successfully")
             theming.role(self.lbl_headline, "")
 
     def _refresh_setup_labels(self):

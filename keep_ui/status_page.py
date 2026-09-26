@@ -4,11 +4,11 @@ from PySide6.QtWidgets import QWidget, QScrollArea, QFrame, QVBoxLayout, QHBoxLa
 from .common import DisclosureSection
 import consumer
 import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
-from odcs_ui.widgets import StatusFacts
+from .status_icons import SuccessBadge, BadgeFacts
 
 class StatusPage(QScrollArea):
     recoveryTestRequested = Signal()
-    CONTROL_NAMES = ('activity_rows', 'backup_explanation', 'backup_progress', 'btn_test_recovery', 'copy_summary_button', 'details_section', 'facts_surface', 'history_section', 'lbl_check', 'lbl_dest', 'lbl_dest_reason', 'lbl_dest_status', 'lbl_headline', 'lbl_last', 'lbl_last_attempt', 'lbl_next', 'lbl_progress_detail', 'lbl_repo', 'lbl_restore_test', 'lbl_verify', 'left_panel', 'log_section', 'log_view', 'status_facts', 'summary_surface')
+    CONTROL_NAMES = ('headline_icon', 'activity_rows', 'backup_explanation', 'backup_progress', 'btn_test_recovery', 'copy_summary_button', 'details_section', 'facts_surface', 'history_section', 'lbl_check', 'lbl_dest', 'lbl_dest_reason', 'lbl_dest_status', 'lbl_headline', 'lbl_last', 'lbl_last_attempt', 'lbl_next', 'lbl_progress_detail', 'lbl_repo', 'lbl_restore_test', 'lbl_verify', 'left_panel', 'log_section', 'log_view', 'status_facts', 'summary_surface')
 
     def __init__(self):
         super().__init__()
@@ -37,7 +37,12 @@ class StatusPage(QScrollArea):
         font.setPointSize(font.pointSize() + 4)
         self.lbl_headline.setFont(font)
         self.lbl_headline.setWordWrap(True)
-        summary.addWidget(self.lbl_headline)
+        headline = QHBoxLayout()
+        headline.setSpacing(16)
+        self.headline_icon = SuccessBadge("never", 48)
+        headline.addWidget(self.headline_icon, 0, Qt.AlignVCenter)
+        headline.addWidget(self.lbl_headline, 1)
+        summary.addLayout(headline)
         self.backup_explanation = QLabel("Keep saves a new version of your selected files. Earlier backups remain available according to your retention settings. The backup location is not erased.")
         self.backup_explanation.setWordWrap(True)
         summary.addWidget(self.backup_explanation)
@@ -65,7 +70,7 @@ class StatusPage(QScrollArea):
         self.facts_surface.setAttribute(Qt.WA_StyledBackground, True)
         facts = QVBoxLayout(self.facts_surface)
         facts.setContentsMargins(24, 16, 24, 12)
-        self.status_facts = StatusFacts("Can you get your files back?")
+        self.status_facts = BadgeFacts("Can you get your files back?")
         self.status_facts.addFact("backup", "Backup completed", "Your selected files were saved")
         self.status_facts.addFact("check", "Integrity checked", "Stored data is readable and consistent")
         self.status_facts.addFact("recovery", "Recovery tested", "Restore one file using only your passphrase",
