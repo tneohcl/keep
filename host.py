@@ -7,9 +7,17 @@ fusermount, see packaging/flatpak). Inside a Flatpak, command() runs them
 through flatpak-spawn --host; anywhere else it leaves them unchanged.
 """
 import os
+from pathlib import Path
 import posixpath
+import shutil
 
 FLATPAK_BIN = "/usr/bin/flatpak"
+# Inside the Flatpak the sandbox's /usr is the runtime's. --filesystem=host-os
+# shows the host's /usr (and /bin, /lib...) under HOST_ROOT, and
+# --filesystem=/var/lib/flatpak:ro shows system Flatpaks at their own path.
+HOST_ROOT = "/run/host"
+SYSTEM_FLATPAK = "/var/lib/flatpak"
+HOST_PATH = ("/usr/local/bin", "/usr/bin", "/bin", "/usr/local/sbin", "/usr/sbin", "/sbin")
 
 
 def flatpak_id():
@@ -41,3 +49,53 @@ def backup_command(config_path):
     if not app_id:
         return None
     return [FLATPAK_BIN, "run", "--command=keep-backup", app_id, "--config", config_path]
+
+
+def system_path(path):
+    """Where a host system path (/usr/..., /var/lib/flatpak/...) is found
+    from here: the host's /usr family is under HOST_ROOT inside a Flatpak."""
+    if flatpak_id():
+        if path.startswith("/var/lib/flatpak"):
+            return SYSTEM_FLATPAK + path[len("/var/lib/flatpak"):]
+        if path.split("/")[1:2] and path.split("/")[1] in ("usr", "bin", "sbin", "lib", "lib64", "lib32"):
+            return HOST_ROOT + path
+    return path
+
+
+def which(name, home):
+    """The host's executable for `name`, as a path readable from here, or None."""
+    if not flatpak_id():
+        return shutil.which(name)
+    if "/" in name:
+        candidates = [system_path(name) if name.startswith("/") else name]
+    else:
+        folders = [system_path(folder) for folder in HOST_PATH]
+        folders += [str(Path(home) / ".local/bin"), str(Path(home) / ".local/share/flatpak/exports/bin"),
+                    system_path("/var/lib/flatpak/exports/bin")]
+        candidates = [posixpath.join(folder, name) for folder in folders]
+    return next((c for c in candidates if _host_executable(c)), None)
+
+
+def _host_executable(path):
+    """Is `path` an executable on the host? Symlinks are followed one hop at a
+    time: an absolute target (/usr/bin/rustdesk -> /usr/share/rustdesk/rustdesk)
+    means the host's /usr, not the sandbox's, so it goes back through
+    system_path. At most 40 hops, like the kernel."""
+    for _ in range(40):
+        if not os.path.islink(path):
+            return os.path.isfile(path) and os.access(path, os.X_OK)
+        try:
+            target = os.readlink(path)
+        except OSError:
+            return False
+        path = system_path(target) if target.startswith("/") else posixpath.normpath(
+            posixpath.join(posixpath.dirname(path), target))
+    return False
+
+
+def data_dirs(home):
+    """The host's XDG data folders (where launchers live), as readable from here."""
+    if not flatpak_id():
+        return [Path(root) for root in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(os.pathsep) if root]
+    return [Path(home) / ".local/share/flatpak/exports/share", Path(system_path("/var/lib/flatpak/exports/share")),
+            Path(system_path("/usr/local/share")), Path(system_path("/usr/share"))]

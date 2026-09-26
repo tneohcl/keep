@@ -4,6 +4,8 @@ import configparser
 import re
 from pathlib import Path
 
+import host
+
 # These are data locations, not cross-install restore conversion rules.
 KNOWN = {
     "firefox": ("Firefox", [".mozilla", ".config/mozilla"], "org.mozilla.firefox"),
@@ -20,7 +22,8 @@ def display_name(appid, home=None):
     home = Path(home or Path.home())
     roots = [home / ".local/share/flatpak/exports/share/applications",
              home / ".local/share/applications",
-             Path("/var/lib/flatpak/exports/share/applications"), Path("/usr/share/applications")]
+             Path(host.system_path("/var/lib/flatpak/exports/share/applications")),
+             Path(host.system_path("/usr/share/applications"))]
     for root in roots:
         try:
             parser = configparser.ConfigParser(interpolation=None)
@@ -115,7 +118,7 @@ def selection_conflict(config, sources, home=None):
 # System-wide Flatpak deployments. A module constant so tests can point it at
 # an empty directory - otherwise whatever the test machine has installed
 # (e.g. Firefox or Krita as system Flatpaks) leaks into the results.
-SYSTEM_FLATPAK_APP_DIR = Path("/var/lib/flatpak/app")
+SYSTEM_FLATPAK_APP_DIR = Path(host.system_path("/var/lib/flatpak/app"))
 
 
 class InstalledApps:
@@ -126,7 +129,6 @@ class InstalledApps:
     """
     def __init__(self, home=None):
         import shlex
-        import shutil
         self.home = Path(home or Path.home())
         self.names = set()
         self.flatpak_ids = set()
@@ -138,7 +140,7 @@ class InstalledApps:
             except OSError:
                 pass
         roots = [self.home / ".local/share/applications"]
-        roots += [Path(root) / "applications" for root in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(os.pathsep) if root]
+        roots += [root / "applications" for root in host.data_dirs(self.home)]
         for root in roots:
             try:
                 files = root.glob("*.desktop")
@@ -159,7 +161,7 @@ class InstalledApps:
                                 continue
                             if command[0] == "env":
                                 command = [part for part in command[1:] if "=" not in part and not part.startswith("-")]
-                            if not command or not shutil.which(command[0]):
+                            if not command or not host.which(command[0], self.home):
                                 continue
                             self.names.add(self._key(Path(command[0]).name))
                         self.names.update(self._key(value) for value in (desktop.stem, entry.get("Name", "")) if value)
@@ -169,7 +171,7 @@ class InstalledApps:
                 continue
         for key, (label, _paths, appid) in KNOWN.items():
             executable = "obs" if key == "obs" else key
-            if shutil.which(executable) or appid in self.flatpak_ids:
+            if host.which(executable, self.home) or appid in self.flatpak_ids:
                 self.names.update(self._key(value) for value in (key, label, appid))
         self.names.update(self._key(value) for value in self.flatpak_ids)
 
