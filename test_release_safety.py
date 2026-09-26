@@ -106,5 +106,25 @@ class ReleaseSafetyTests(unittest.TestCase):
             self.assertIn("/private/key", protected)
 
 
+
+class DebianPackageContents(unittest.TestCase):
+    def test_every_module_the_package_imports_is_installed(self):
+        # Review of #8: host.py was imported by main/cli/consumer but not
+        # installed by build-deb.sh, so the packaged app, CLI and scheduled
+        # engine failed to start.
+        import re
+        root = Path(__file__).resolve().parent
+        script = (root / "packaging" / "build-deb.sh").read_text()
+        installed = set(re.findall(r"\b(\w+)\.py\b", script.split('"$stage/usr/lib/keep/"')[0]))
+        local = {p.stem for p in root.glob("*.py") if not p.stem.startswith("test_")}
+        packaged = [root / f"{name}.py" for name in installed if (root / f"{name}.py").exists()]
+        packaged += sorted((root / "keep_ui").glob("*.py"))
+        missing = set()
+        for source in packaged:
+            for name in re.findall(r"^\s*(?:from|import)\s+(\w+)", source.read_text(), re.M):
+                if name in local and name not in installed:
+                    missing.add(f"{name}.py (imported by {source.name})")
+        self.assertEqual(sorted(missing), [])
+
 if __name__ == "__main__":
     unittest.main()

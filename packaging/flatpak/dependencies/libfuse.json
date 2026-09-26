@@ -1,0 +1,27 @@
+{
+    "name": "libfuse",
+    "buildsystem": "meson",
+    "config-opts": [
+        "-Dexamples=false",
+        "-Duseroot=false",
+        "-Dtests=false",
+        "-Dudevrulesdir=/tmp/",
+        "-Dinitscriptdir="
+    ],
+    "sources": [
+        {
+            "type": "archive",
+            "url": "https://github.com/libfuse/libfuse/releases/download/fuse-3.18.2/fuse-3.18.2.tar.gz",
+            "sha256": "f01de85717e20adf5f98aff324acd85dd73d61a5ca3834d573dcf0bd6e54a298",
+            "x-checker-data": {
+                "type": "anitya",
+                "project-id": 861,
+                "stable-only": true,
+                "versions": {
+                    "<": "4.0"
+                },
+                "url-template": "https://github.com/libfuse/libfuse/releases/download/fuse-$version/fuse-$version.tar.gz"
+            }
+        }
+    ]
+}

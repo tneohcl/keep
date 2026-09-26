@@ -2,7 +2,7 @@
 # Target Debian 13. Runtime dependencies are resolved by apt at install.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-version=${1:-0.9.2}
+version=${1:-$(python3 -c 'import version; print(version.VERSION)')}
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected numeric X.Y.Z version' >&2; exit 2; }
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
@@ -19,8 +19,10 @@ Description: Linux desktop backup and recovery with BorgBackup
  Versioned encrypted backups, automatic schedules and safe file recovery.
 EOF
 # Explicit allowlist: never package user configuration or credentials.
-install -m 644 main.py cli.py borg_ops.py operation_lock.py recovery_test.py app_logging.py mount_service.py consumer.py destination.py keep_backup.py applications.py themes.py theming.py style.qss chevron-down.svg check.svg "$stage/usr/lib/keep/"
+install -m 644 main.py cli.py host.py version.py borg_ops.py operation_lock.py recovery_test.py app_logging.py mount_service.py consumer.py destination.py keep_backup.py applications.py themes.py theming.py style.qss chevron-down.svg check.svg "$stage/usr/lib/keep/"
 install -m 644 keep_ui/*.py "$stage/usr/lib/keep/keep_ui/"
+# What About shows as the build (version.build_info); never a file's mtime.
+printf '{"built": "%s", "by": "Debian package %s", "commit": "%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" "$version" "$(git rev-parse --short HEAD 2>/dev/null || true)" > "$stage/usr/lib/keep/BUILD_INFO"
 # Bundled odcs-ui (pinned by packaging/sync-odcs-ui.sh; not available from apt).
 install -d "$stage/usr/lib/keep/vendor/odcs_ui"
 install -m 644 vendor/ODCS_UI_VERSION "$stage/usr/lib/keep/vendor/"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Keep
+GenericName=Backup
+Comment=Back up and recover your files
+Exec=keep
+Icon=io.github.tneohcl.Keep
+Terminal=false
+Categories=Utility;Archiving;
+Keywords=backup;restore;borg;

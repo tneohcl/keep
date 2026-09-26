@@ -2,6 +2,8 @@
 import app_logging
 import borg_ops
 from operation_lock import RepositoryBusy, RepositoryLock
+import host
+import version
 
 if __name__ == "__main__":
     app_logging.start()
@@ -99,7 +101,8 @@ _legacy_sources = _consumer_module.backup_source_entries(CONFIG)
 PROJECT_DIR = CONFIG.get("project_dir") or (_legacy_sources[0]["path"] if _legacy_sources else HOME)
 PROJECT_DIR_IN_ARCHIVE = PROJECT_DIR.lstrip("/")
 PROJECT_EXCLUDE = set(CONFIG.get("project_exclude", []))
-MOUNTPOINT = "/tmp/borg-keep-mount"
+# /tmp/borg-keep-mount, or its shared equivalent inside a Flatpak (host.py).
+MOUNTPOINT = host.shared_path("borg-keep-mount")
 
 # REPO/NAS_MOUNT_CHECK (kept under that name for the least code churn, even
 # though it's not always literally a NAS now) are resolved fresh - not just
@@ -155,7 +158,7 @@ def timer_enabled(unit=None):
     unit = unit or configured_timer_unit()
     try:
         r = subprocess.run(
-            ["systemctl", "--user", "is-enabled", unit],
+            host.command(["systemctl", "--user", "is-enabled", unit]),
             capture_output=True, text=True, timeout=5,
         )
         return r.returncode == 0 and r.stdout.strip() in {"enabled", "enabled-runtime", "static"}
@@ -194,7 +197,7 @@ def apply_keep_schedule(schedule):
 
     def _systemctl(*args, check=False):
         return subprocess.run(
-            ["systemctl", "--user", *args],
+            host.command(["systemctl", "--user", *args]),
             check=check, capture_output=True, text=True, timeout=10,
         )
 
@@ -313,7 +316,7 @@ def is_natively_installed(dpkg_name):
 
 def is_flatpak_installed(appid):
     try:
-        out = subprocess.run(["flatpak", "info", appid], capture_output=True, timeout=5)
+        out = subprocess.run(host.command(["flatpak", "info", appid]), capture_output=True, timeout=5)
         return out.returncode == 0
     except Exception:
         return False
@@ -321,7 +324,7 @@ def is_flatpak_installed(appid):
 
 def is_flatpak_running(appid):
     try:
-        out = subprocess.run(["flatpak", "ps", "--columns=application"], capture_output=True, text=True, timeout=5)
+        out = subprocess.run(host.command(["flatpak", "ps", "--columns=application"]), capture_output=True, text=True, timeout=5)
         return appid in out.stdout.split()
     except Exception:
         return False
@@ -796,7 +799,7 @@ def flatpak_app_names():
     names = {}
     try:
         out = subprocess.run(
-            ["flatpak", "list", "--app", "--columns=name,application"],
+            host.command(["flatpak", "list", "--app", "--columns=name,application"]),
             capture_output=True, text=True, timeout=10,
         )
         for line in out.stdout.strip().splitlines():
@@ -2566,11 +2569,9 @@ class AboutDialog(QDialog):
 
         layout.addWidget(QLabel("A BorgBackup front end for backup status, restore, and recovery."))
 
-        try:
-            build_stamp = datetime.fromtimestamp(os.path.getmtime(__file__)).strftime("%Y-%m-%d %H:%M")
-        except OSError:
-            build_stamp = "unknown"
-        build_lbl = QLabel(f"Build: {build_stamp}")
+        # Not a file's mtime: packagers such as Flatpak reset it to 1970.
+        build = version.build_info()
+        build_lbl = QLabel(f"Version {version.VERSION}" + (f" · Build {build}" if build else ""))
         theming.role(build_lbl, "secondary")
         layout.addWidget(build_lbl)
 
@@ -3382,7 +3383,7 @@ class MainWindow(QWidget):
             try:
                 unit = configured_timer_unit()
                 out = subprocess.run(
-                    ["systemctl", "--user", "show", unit, "-p", "NextElapseUSecRealtime", "--value"],
+                    host.command(["systemctl", "--user", "show", unit, "-p", "NextElapseUSecRealtime", "--value"]),
                     capture_output=True, text=True, timeout=5,
                 )
                 raw_next = out.stdout.strip()
@@ -3723,7 +3724,7 @@ class MainWindow(QWidget):
             # every time it's plugged back in, so resolve_destination() finds
             # it fresh each time via `findmnt -S UUID=...` instead
             try:
-                out = subprocess.run(["findmnt", "-T", folder, "-n", "-o", "UUID,TARGET"], capture_output=True, text=True, timeout=5)
+                out = subprocess.run(host.command(["findmnt", "-T", folder, "-n", "-o", "UUID,TARGET"]), capture_output=True, text=True, timeout=5)
                 parts = out.stdout.strip().split(None, 1) if out.returncode == 0 else []
             except Exception:
                 parts = []
@@ -4262,7 +4263,7 @@ class MainWindow(QWidget):
             # borg umount can fail (mountpoint busy, a shell cd'd into it,
             # etc.) - fall back to a plain fusermount, which doesn't need
             # borg's own env/lock handling at all
-            fallback = subprocess.run(["fusermount", "-u", MOUNTPOINT], capture_output=True, text=True)
+            fallback = subprocess.run(host.command(["fusermount", "-u", MOUNTPOINT]), capture_output=True, text=True)
             if fallback.returncode != 0:
                 # still actually mounted - don't pretend otherwise. Leaving
                 # self.mounted True here means the NEXT browse/backup/delete
@@ -4385,7 +4386,7 @@ class MainWindow(QWidget):
         os.makedirs(MOUNTPOINT, exist_ok=True)
         # defensively clear any stale mount left by a prior crashed/killed instance,
         # since self.mounted only tracks this instance's own knowledge
-        subprocess.run(["fusermount", "-u", MOUNTPOINT], capture_output=True)
+        subprocess.run(host.command(["fusermount", "-u", MOUNTPOINT]), capture_output=True)
         ok, stderr = self.mount_coordinator.mount_with_recovery(
             lambda: self._attempt_mount(archive), classify_borg_auth_error,
             lambda: self._offer_key_recovery(REPO), lambda: self._offer_unlock(REPO),
@@ -4701,7 +4702,7 @@ if __name__ == "__main__":
     # Ties Keep's windows to keep.desktop (the menu entry / the .deb's
     # launcher). On Wayland this is the app_id the taskbar uses to find the
     # icon - without it the window shows up as a generic "python3" app.
-    app.setDesktopFileName("keep")
+    app.setDesktopFileName(host.flatpak_id() or "keep")
     win = MainWindow()
     win.show()
     app_logging.record("application.ready")

@@ -180,7 +180,7 @@ with tempfile.TemporaryDirectory() as directory:
             pass
         assert not window._opening_archive
     from types import SimpleNamespace
-    with patch.object(main.subprocess, "run", return_value=SimpleNamespace(stdout="borg 1.4")):
+    with patch.object(main.subprocess, "run", return_value=SimpleNamespace(stdout="borg 1.4", returncode=0)):
         about = main.AboutDialog(window)
     about.show()
     app.processEvents()
