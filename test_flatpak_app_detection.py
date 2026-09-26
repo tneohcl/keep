@@ -111,6 +111,45 @@ class AppIcons(unittest.TestCase):
         self.assertEqual(applications.icon_names(flatpak)[0], "org.mozilla.firefox")
 
 
+class RealIconNames(unittest.TestCase):
+    """The chooser guessed icon names from IDs and folders, so Dolphin
+    (Icon=system-file-manager), curated items and launchers with an icon file
+    all showed the generic icon, in the source copy too."""
+
+    def setUp(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.home = tmp / "home"
+        (self.home / ".local/share/dolphin").mkdir(parents=True)
+        apps = tmp / "share/applications"
+        desktop(apps / "org.kde.dolphin.desktop", "Dolphin", "dolphin %u", "Icon=system-file-manager\n")
+        desktop(apps / "velocoder.desktop", "VeloCoder", "velocoder", "Icon=/opt/velocoder/icon.svg\n")
+        binaries = tmp / "bin"
+        binaries.mkdir()
+        for name in ("dolphin", "velocoder"):
+            (binaries / name).write_text("#!/bin/sh\n")
+            (binaries / name).chmod(0o755)
+        for patcher in (patch.object(host, "flatpak_id", return_value=None),
+                        patch.object(applications, "SYSTEM_FLATPAK_APP_DIR", tmp / "none"),
+                        patch.dict(os.environ, {"XDG_DATA_DIRS": str(tmp / "share"), "PATH": str(binaries)})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.installed = applications.InstalledApps(self.home)
+
+    def test_launcher_icon_is_used(self):
+        entry = {"id": "path:.local/share/dolphin", "label": "dolphin", "paths": [".local/share/dolphin"]}
+        self.assertEqual(applications.icon_names(entry, self.installed)[0], "system-file-manager")
+
+    def test_launcher_icon_file_path_is_kept(self):
+        entry = {"id": "path:.config/VeloCoder", "label": "VeloCoder", "paths": [".config/VeloCoder"]}
+        self.assertEqual(applications.icon_names(entry, self.installed)[0], "/opt/velocoder/icon.svg")
+
+    def test_curated_items_use_their_configured_icon(self):
+        config = {"curated_items": [["SSH Keys", [".ssh"], "dialog-password", "system"]]}
+        (self.home / ".ssh").mkdir()
+        entry = next(e for e in applications.catalog(config, self.home) if e["id"] == "curated:SSH Keys")
+        self.assertEqual(applications.icon_names(entry, self.installed)[0], "dialog-password")
+
+
 class OutsideTheFlatpakUnchanged(unittest.TestCase):
     def test_paths_and_lookups_are_the_host_itself(self):
         with patch.object(host, "flatpak_id", return_value=None):
