@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon
@@ -5,6 +6,16 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from .common import DisclosureSection
 from .checkable_list import CheckableListWidget, apply_tile_mode
 from .restore_picker import view_switch
+import host
+
+def _theme_or_file_icon(name):
+    """A launcher's Icon= is a theme name or a file path (a host path, as
+    seen from here inside a Flatpak). None when neither exists."""
+    if name.startswith("/"):
+        path = host.system_path(name)
+        return QIcon(path) if os.path.isfile(path) else None
+    return QIcon.fromTheme(name) if QIcon.hasThemeIcon(name) else None
+
 
 class ApplicationSelectionDialog(QDialog):
     """Explicit application choices with inspectable source paths."""
@@ -64,9 +75,10 @@ class ApplicationSelectionDialog(QDialog):
             if not entry["recognized"]:
                 kind = "Unrecognized data folder"
             item = QListWidgetItem(entry['label'])
-            flatpak_id = next((p.split("/")[-1] for p in entry["paths"] if p.startswith(".var/app/")), entry["id"])
             fallback = self.style().standardIcon(QStyle.SP_ComputerIcon if entry["category"] == "system" else QStyle.SP_FileIcon)
-            item.setIcon(QIcon.fromTheme(flatpak_id, QIcon.fromTheme(entry["id"], fallback)))
+            icon = next((found for found in map(_theme_or_file_icon, applications.icon_names(entry, installed))
+                         if found is not None), fallback)
+            item.setIcon(icon)
             entry["installed"] = installed.entry_installed(entry)
             item.setData(Qt.UserRole, entry)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)

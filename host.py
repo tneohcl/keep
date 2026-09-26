@@ -99,3 +99,13 @@ def data_dirs(home):
         return [Path(root) for root in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(os.pathsep) if root]
     return [Path(home) / ".local/share/flatpak/exports/share", Path(system_path("/var/lib/flatpak/exports/share")),
             Path(system_path("/usr/local/share")), Path(system_path("/usr/share"))]
+
+
+def icon_dirs(home):
+    """Icon folders to add inside a Flatpak: other Flatpaks export their app
+    icons here, outside the sandbox's icon search path (the host's own
+    /usr/share/icons is already there, at /run/host/share/icons)."""
+    if not flatpak_id():
+        return []
+    return [Path(home) / ".local/share/flatpak/exports/share/icons",
+            Path(system_path("/var/lib/flatpak/exports/share/icons"))]

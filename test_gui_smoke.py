@@ -428,7 +428,7 @@ with tempfile.TemporaryDirectory() as directory:
     app_home = Path(directory) / "app-home"
     for relative in (".mozilla", ".var/app/org.mozilla.firefox", ".config/kritarc", ".ssh", ".gnupg", ".local/share/kwalletd"):
         (app_home / relative).mkdir(parents=True)
-    with patch.object(applications, "InstalledApps", return_value=SimpleNamespace(entry_installed=lambda entry: entry["id"] == "firefox")):
+    with patch.object(applications, "InstalledApps", return_value=SimpleNamespace(entry_installed=lambda entry: entry["id"] == "firefox", icon=lambda *names: None)):
         dialog = main.ApplicationSelectionDialog(main.CONFIG, app_home, window)
     dialog.all_data.setChecked(False)
     assert dialog.items.count() == 2
