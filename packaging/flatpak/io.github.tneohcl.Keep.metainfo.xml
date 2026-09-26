@@ -1,20 +1,69 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.tneohcl.Keep</id>
-  <name>Keep</name>
-  <summary>Back up and recover your files</summary>
+  <name>Keep Backup</name>
+  <summary>Back up your files and prove you can restore them</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <developer id="io.github.tneohcl">
     <name>ODCS App Studio</name>
   </developer>
   <description>
-    <p>Keep backs up your folders and application data with BorgBackup, on a schedule, to a network share or a drive. It checks that your backups can be read and helps you prove you can restore them with only your passphrase.</p>
+    <p>Keep Backup backs up your folders and the data of the apps you use, automatically, to a network share, a USB drive or any folder. Most backup tools tell you a backup ran; Keep Backup also tells you whether you could get your files back.</p>
+    <ul>
+      <li>Choose folders, application data and desktop settings; native and Flatpak apps are detected for you</li>
+      <li>Encrypted, deduplicated backups in standard BorgBackup repositories</li>
+      <li>Daily or weekly backups that run with the app closed, with older versions thinned out automatically</li>
+      <li>Integrity checks, and a recovery test that restores a file using only your passphrase</li>
+      <li>A recovery checklist, key export and paper-key unlock for restoring on a new computer</li>
+      <li>Restore to a new folder without touching your current files, or to the original place with a safety copy</li>
+      <li>Problems explained in plain language</li>
+    </ul>
+    <p>Keep Backup is a front end to BorgBackup. Your backups can always be restored with the borg command alone.</p>
   </description>
   <launchable type="desktop-id">io.github.tneohcl.Keep.desktop</launchable>
   <url type="homepage">https://github.com/tneohcl/keep</url>
+  <url type="bugtracker">https://github.com/tneohcl/keep/issues</url>
+  <url type="vcs-browser">https://github.com/tneohcl/keep</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>See at a glance whether you can get your files back</caption>
+      <image>https://raw.githubusercontent.com/tneohcl/keep/main/docs/screenshots/status-light.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Pick a backup, then the apps, folders or files to restore</caption>
+      <image>https://raw.githubusercontent.com/tneohcl/keep/main/docs/screenshots/restore-light.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Choose which applications to back up</caption>
+      <image>https://raw.githubusercontent.com/tneohcl/keep/main/docs/screenshots/applications-light.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Know what you need to restore on a new computer</caption>
+      <image>https://raw.githubusercontent.com/tneohcl/keep/main/docs/screenshots/recovery-light.png</image>
+    </screenshot>
+    <screenshot environment="plasma:dark">
+      <caption>Follows your desktop's dark theme</caption>
+      <image>https://raw.githubusercontent.com/tneohcl/keep/main/docs/screenshots/status-dark.png</image>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#b9d7f2</color>
+    <color type="primary" scheme_preference="dark">#1f4a70</color>
+  </branding>
   <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
   <releases>
-    <release version="0.9.2" date="2026-09-26"/>
+    <release version="0.9.2" date="2026-09-26">
+      <description>
+        <p>First Flatpak release, now called Keep Backup.</p>
+      </description>
+    </release>
   </releases>
 </component>

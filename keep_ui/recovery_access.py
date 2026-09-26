@@ -16,6 +16,7 @@ import theming  # noqa: F401  (puts the bundled vendor/odcs_ui on sys.path)
 from odcs_ui.theming import set_role
 from odcs_ui.widgets import StatusIcon
 import recovery_test
+import version
 
 CONFIRM_TEXT = {
     "passphrase_saved": "The passphrase is saved in a password manager",
@@ -325,11 +326,11 @@ class RecoveryAccessDialog(QDialog):
             recovery_test.save_access(self.repository, {"key_exported": recovery_test.now_iso()}, repository_id=self.repository_id)
             self.changed.emit()
             QMessageBox.information(
-                self, "Keep",
+                self, version.APP_NAME,
                 f"Key file saved to:\n{path}\n\nIt only works together with your passphrase. Keep a copy with "
                 "your recovery kit, away from this computer, then delete this one if it's on this computer.")
         else:
-            QMessageBox.warning(self, "Keep", f"The key file couldn't be exported.\n\n{message}".strip())
+            QMessageBox.warning(self, version.APP_NAME, f"The key file couldn't be exported.\n\n{message}".strip())
 
     def done(self, result):
         if self.worker is not None and self.worker.isRunning():

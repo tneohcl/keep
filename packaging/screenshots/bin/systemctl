@@ -1,0 +1,8 @@
+#!/bin/sh
+# Demo stand-in: the demo user's 04:00 timer. Never reaches the real systemd.
+case "$*" in
+  *NextElapseUSecRealtime*) date -d 'tomorrow 04:00' '+%a %Y-%m-%d %H:%M:%S %:::z' ;;
+  *is-enabled*) echo enabled ;;
+  *is-active*) echo active ;;
+esac
+exit 0

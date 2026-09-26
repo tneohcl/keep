@@ -5,6 +5,9 @@ from pathlib import Path
 import subprocess
 
 VERSION = "0.9.2"
+# The product name wherever it is shown. The app ID, the `keep` command and
+# archive names stay "keep".
+APP_NAME = "Keep Backup"
 _HERE = Path(__file__).resolve().parent
 _EARLIEST = datetime(2020, 1, 1, tzinfo=timezone.utc)
 

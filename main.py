@@ -606,6 +606,8 @@ def friendly_datetime(dt):
     Keep shows (backup/maintenance log timestamps, Borg archive times, the
     next-scheduled run), each from a different source in a different raw
     format, so they all read the same way once actually displayed."""
+    if dt.tzinfo:
+        dt = dt.astimezone()  # shown in local time, whatever offset it was stored with
     now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
     today = now.date()
     d = dt.date()
@@ -1054,7 +1056,7 @@ class ItemPicker(RestorePicker):
     def _checked_items(self):
         checked = self._all_items()
         if not checked:
-            QMessageBox.information(self, "Keep", "Select one or more items first.")
+            QMessageBox.information(self, version.APP_NAME, "Select one or more items first.")
             return checked
         # two different catalog entries can resolve to the same live path -
         # e.g. a cross-install app's native and Flatpak sources both now
@@ -1067,7 +1069,7 @@ class ItemPicker(RestorePicker):
             for _, live_target in item.data(Qt.UserRole):
                 if live_target in seen and seen[live_target] != identity:
                     QMessageBox.warning(
-                        self, "Keep",
+                        self, version.APP_NAME,
                         f"'{seen[live_target]}' and '{identity}' would both restore to "
                         f"the same live location:\n{live_target}\n\n"
                         f"Pick only one — restoring both would make whichever runs second "
@@ -1120,7 +1122,7 @@ class ItemPicker(RestorePicker):
                        for item in checked
                        for rel_path, live_target in item.data(Qt.UserRole)]
         if not self._ensure_mounted_cb():
-            QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not access the archive - nothing was restored.")
             return
         dest_dir = dest_dir or new_restore_folder()
         plan = [(f"{MOUNTPOINT}/{rel_path}",
@@ -1158,7 +1160,7 @@ class ItemPicker(RestorePicker):
                    for item in checked
                    for rel_path, live_target in item.data(Qt.UserRole)]
         if not self._ensure_mounted_cb():
-            QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not access the archive - nothing was restored.")
             return
         targets = []
         running_apps = set()
@@ -1192,7 +1194,7 @@ class ItemPicker(RestorePicker):
                 f"and undo or corrupt the restore. Close it first."
             )
         confirmed = QMessageBox.warning(
-            self, "Keep — this will overwrite live data", msg,
+            self, f"{version.APP_NAME} — this will overwrite live data", msg,
             QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
         )
         if confirmed != QMessageBox.Yes:
@@ -1202,7 +1204,7 @@ class ItemPicker(RestorePicker):
         # inactivity timer, so a slow "are you sure?" click could still let
         # the mount idle out before we get here - re-ensure it
         if not self._ensure_mounted_cb():
-            QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored, and nothing live was touched.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not access the archive - nothing was restored, and nothing live was touched.")
             return
 
         before_dir = os.path.join(HOME, "Keep-Restored", "Before-Direct-Restore", datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -1767,7 +1769,7 @@ class UnlockBackupDialog(QDialog):
 
     def __init__(self, label, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Unlock Backup")
+        self.setWindowTitle(f"{version.APP_NAME} — Unlock Backup")
         self.resize(420, 0)
         self.passphrase = None
         self.remember = False
@@ -1841,7 +1843,7 @@ class KeyRecoveryDialog(QDialog):
 
     def __init__(self, label, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Backup Key Not Found")
+        self.setWindowTitle(f"{version.APP_NAME} — Backup Key Not Found")
         self.choice = None
         layout = QVBoxLayout(self)
 
@@ -1886,7 +1888,7 @@ class PaperKeyWizardDialog(QDialog):
     def __init__(self, repo, label, parent=None):
         super().__init__(parent)
         self.repo = repo
-        self.setWindowTitle("Keep — Recover From Paper Key")
+        self.setWindowTitle(f"{version.APP_NAME} — Recover From Paper Key")
         self.resize(520, 420)
         self.recovered = False
         self._worker = None
@@ -1980,7 +1982,7 @@ class KeyExportDialog(QDialog):
         # sweep: the old code unconditionally did Path(export_path).read_text()
         # here with no existence check at all.
         self._paper_key_available = bool(export_path) and os.path.isfile(export_path)
-        self.setWindowTitle("Keep — Save Your New Repository Key")
+        self.setWindowTitle(f"{version.APP_NAME} — Save Your New Repository Key")
         self.resize(600, 440)
         layout = QVBoxLayout(self)
 
@@ -2061,7 +2063,7 @@ class KeyExportDialog(QDialog):
             self.accept()
             return
         confirmed = QMessageBox.warning(
-            self, "Keep",
+            self, version.APP_NAME,
             "This permanently deletes the temporary export file on disk. Make sure "
             "both values are actually saved in your password manager first — this "
             "cannot be undone.",
@@ -2071,9 +2073,9 @@ class KeyExportDialog(QDialog):
             return
         result = subprocess.run(["shred", "-u", self.export_path], capture_output=True, text=True)
         if result.returncode != 0:
-            QMessageBox.warning(self, "Keep", f"Could not delete the temporary file:\n{result.stderr}\n\nYou can remove it yourself later:\nshred -u {self.export_path}")
+            QMessageBox.warning(self, version.APP_NAME, f"Could not delete the temporary file:\n{result.stderr}\n\nYou can remove it yourself later:\nshred -u {self.export_path}")
         else:
-            QMessageBox.information(self, "Keep", "Temporary file deleted.")
+            QMessageBox.information(self, version.APP_NAME, "Temporary file deleted.")
         self.accept()
 
 
@@ -2087,7 +2089,7 @@ class DestinationTypeDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Backup Destination Type")
+        self.setWindowTitle(f"{version.APP_NAME} — Backup Destination Type")
         self.chosen = None
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("What kind of place is this backup going to?"))
@@ -2122,7 +2124,7 @@ class BackupSourcesDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — What to Back Up")
+        self.setWindowTitle(f"{version.APP_NAME} — What to Back Up")
         self.resize(620, 500)
         self.sources = _consumer_module.backup_source_entries(CONFIG)
         layout = QVBoxLayout(self)
@@ -2206,10 +2208,10 @@ class BackupSourcesDialog(QDialog):
             return
         folder = os.path.abspath(folder)
         if any(e["path"] == folder for e in self.sources):
-            QMessageBox.information(self, "Keep", "That folder is already in the backup list.")
+            QMessageBox.information(self, version.APP_NAME, "That folder is already in the backup list.")
             return
         default = os.path.basename(folder.rstrip("/")) or folder
-        label, ok = QInputDialog.getText(self, "Keep", "Name shown in Keep:", text=default)
+        label, ok = QInputDialog.getText(self, version.APP_NAME, "Name shown in Keep:", text=default)
         if not ok:
             return
         self.sources.append({"label": label.strip() or default, "path": folder})
@@ -2221,7 +2223,7 @@ class BackupSourcesDialog(QDialog):
         if row < 0:
             return
         current = self.sources[row]
-        label, ok = QInputDialog.getText(self, "Keep", "Name shown in Keep:", text=current["label"])
+        label, ok = QInputDialog.getText(self, version.APP_NAME, "Name shown in Keep:", text=current["label"])
         if ok and label.strip():
             current["label"] = label.strip()
             self._refresh()
@@ -2235,7 +2237,7 @@ class BackupSourcesDialog(QDialog):
 
     def _save(self):
         if not self.sources and not self.cb_app_data.isChecked():
-            QMessageBox.warning(self, "Keep", "Choose at least one folder, or keep application data and settings enabled.")
+            QMessageBox.warning(self, version.APP_NAME, "Choose at least one folder, or keep application data and settings enabled.")
             return
         CONFIG["backup_sources"] = [dict(e) for e in self.sources]
         CONFIG["include_app_data"] = self.cb_app_data.isChecked()
@@ -2255,7 +2257,7 @@ class ScheduleDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Automatic Backups")
+        self.setWindowTitle(f"{version.APP_NAME} — Automatic Backups")
         self.resize(500, 300)
         schedule = dict(CONFIG.get("schedule", {}))
         layout = QVBoxLayout(self)
@@ -2331,7 +2333,7 @@ class FirstRunDialog(QDialog):
     def __init__(self, main_window):
         super().__init__(main_window)
         self.main_window = main_window
-        self.setWindowTitle("Welcome to Keep")
+        self.setWindowTitle(f"Welcome to {version.APP_NAME}")
         self.resize(560, 390)
         self.setModal(False)
         layout = QVBoxLayout(self)
@@ -2429,7 +2431,7 @@ class HelpDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Help")
+        self.setWindowTitle(f"{version.APP_NAME} — Help")
         self.resize(600, 560)
         outer = QVBoxLayout(self)
 
@@ -2517,7 +2519,7 @@ class HelpDialog(QDialog):
              "DISASTER_RECOVERY.md next to this app. Keep that file - and "
              "your backup key and passphrase - somewhere off this machine "
              "too, or losing this machine means losing the backup with it. "
-             "\"About Keep\" (also in this menu) shows exactly which "
+             "\"About Keep Backup\" (also in this menu) shows exactly which "
              "destination and repository this copy of Keep is currently "
              "pointed at - useful for a quick sanity check."),
         ]
@@ -2564,12 +2566,12 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("About Keep")
+        self.setWindowTitle(f"About {version.APP_NAME}")
         layout = QVBoxLayout(self)
         # About fits its visible content on both disclosure transitions.
         layout.setSizeConstraint(QLayout.SetFixedSize)
 
-        title_lbl = QLabel("Keep")
+        title_lbl = QLabel(version.APP_NAME)
         title_font = title_lbl.font()
         title_font.setBold(True)
         title_font.setPointSize(title_font.pointSize() + 4)
@@ -2621,7 +2623,7 @@ class CompareArchivesDialog(QDialog):
 
     def __init__(self, repo, archives, current_archive, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Compare Archives")
+        self.setWindowTitle(f"{version.APP_NAME} — Compare Archives")
         self.resize(640, 480)
         self.repo = repo
         self._worker = None
@@ -2699,7 +2701,7 @@ class ExcludeEditorDialog(QDialog):
 
     def __init__(self, excludes_path, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Keep — Edit Backup Excludes")
+        self.setWindowTitle(f"{version.APP_NAME} — Edit Backup Excludes")
         self.resize(640, 520)
         self.excludes_path = excludes_path
         layout = QVBoxLayout(self)
@@ -2753,7 +2755,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("keepWindow")
-        self.setWindowTitle("Keep")
+        self.setWindowTitle(version.APP_NAME)
         self.setWindowIcon(QIcon.fromTheme("drive-harddisk"))
         self.resize(820, 600)
         self.mount_coordinator = MountCoordinator()
@@ -2844,8 +2846,8 @@ class MainWindow(QWidget):
             self.theme_actions.addAction(action)
         self.theme_actions.triggered.connect(self._on_theme_chosen)
         help_menu = self.menu_bar.addMenu("Help")
-        help_menu.addAction("Keep help", self._show_help).setShortcut(QKeySequence("F1"))
-        help_menu.addAction("About Keep", self._show_about)
+        help_menu.addAction(f"{version.APP_NAME} Help", self._show_help).setShortcut(QKeySequence("F1"))
+        help_menu.addAction(f"About {version.APP_NAME}", self._show_about)
         root.setMenuBar(self.menu_bar)
 
         self.backup_panel = BackupPanel(self)
@@ -2881,7 +2883,7 @@ class MainWindow(QWidget):
         bar = QHBoxLayout(toolbar)
         bar.setContentsMargins(16, 8, 16, 8)
         bar.setSpacing(8)
-        app_title = QLabel("Keep")
+        app_title = QLabel(version.APP_NAME)
         app_title.setObjectName("keepAppTitle")
         # The app name is the brand: body x 1.6, weight 700 (16pt at the usual
         # 10pt body, the ODCS About dialog's app-name size). In points so
@@ -3000,7 +3002,7 @@ class MainWindow(QWidget):
         if self._repo_op_running:
             if hasattr(self, "worker") and self.worker.isRunning():
                 confirmed = QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "A backup is still running. Quitting now will stop it before it "
                     "finishes - existing archives are safe either way, but this run "
                     "won't complete.\n\nQuit anyway and stop the backup?",
@@ -3018,7 +3020,7 @@ class MainWindow(QWidget):
                     # group kill already sent will very likely land soon
                     # regardless, so a moment's wait and trying again works.
                     QMessageBox.warning(
-                        self, "Keep",
+                        self, version.APP_NAME,
                         "The backup didn't stop in time - it may still be shutting "
                         "down. Wait a moment and try closing again.",
                     )
@@ -3026,7 +3028,7 @@ class MainWindow(QWidget):
                     return
             elif hasattr(self, "delete_worker") and self.delete_worker.isRunning():
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "A delete/compact is currently in progress and can't be safely "
                     "interrupted partway through - please wait for it to finish "
                     "before closing Keep.",
@@ -3047,7 +3049,7 @@ class MainWindow(QWidget):
             self.status_worker.stop()
             if not self.status_worker.wait(3000):
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "Still checking backup status - please wait a moment and try "
                     "closing again.",
                 )
@@ -3062,7 +3064,7 @@ class MainWindow(QWidget):
             # only helps while Keep itself is still open). Refuse to close
             # rather than risk that - found via a reviewer's whole-app sweep.
             QMessageBox.warning(
-                self, "Keep",
+                self, version.APP_NAME,
                 "The archive browser is still mounted and won't unmount right now "
                 "(still in use) - closing anyway could leave it locked in the "
                 "background even after Keep exits. Try again in a moment.",
@@ -3354,14 +3356,14 @@ class MainWindow(QWidget):
     def test_recovery(self):
         """Prove a file comes back using only the typed passphrase (recovery_test.py)."""
         if self._repo_op_running:
-            QMessageBox.information(self, "Keep", "Wait for the current backup or delete to finish, then test recovery.")
+            QMessageBox.information(self, version.APP_NAME, "Wait for the current backup or delete to finish, then test recovery.")
             return
         dest = refresh_destination()
         if not dest["available"] or not dest.get("repo"):
-            QMessageBox.information(self, "Keep", f"Connect {dest.get('label') or 'your backup destination'} first, then test recovery.")
+            QMessageBox.information(self, version.APP_NAME, f"Connect {dest.get('label') or 'your backup destination'} first, then test recovery.")
             return
         if not self._unmount():
-            QMessageBox.warning(self, "Keep", "Close the archive you're browsing, then test recovery.")
+            QMessageBox.warning(self, version.APP_NAME, "Close the archive you're browsing, then test recovery.")
             return
         dialog = RecoveryTestDialog(dest["repo"], self)
         dialog.recorded.connect(lambda _record: self.refresh_status())
@@ -3618,7 +3620,7 @@ class MainWindow(QWidget):
 
     def configure_backup_sources(self):
         if self._repo_op_running:
-            QMessageBox.information(self, "Keep", "Wait for the current backup or delete to finish before changing backup sources.")
+            QMessageBox.information(self, version.APP_NAME, "Wait for the current backup or delete to finish before changing backup sources.")
             return False
         old_engine = CONFIG.get("backup_engine")
         old_schedule = dict(CONFIG.get("schedule", {}))
@@ -3651,7 +3653,7 @@ class MainWindow(QWidget):
                         CONFIG["schedule"] = old_schedule
                         save_config()
                         QMessageBox.warning(
-                            self, "Keep",
+                            self, version.APP_NAME,
                             "Your folder list was saved, but Keep could not safely move the active automatic schedule to the built-in backup engine. "
                             "The existing custom backup script remains in control for now.\n\n" + message,
                         )
@@ -3668,7 +3670,7 @@ class MainWindow(QWidget):
                     CONFIG["schedule"] = old_schedule
                     save_config()
                     QMessageBox.warning(
-                        self, "Keep",
+                        self, version.APP_NAME,
                         "Your folder list was saved, but Keep could not safely update the active automatic schedule. "
                         "The previous backup engine remains in use.\n\n" + message,
                     )
@@ -3676,7 +3678,7 @@ class MainWindow(QWidget):
 
         if CONFIG.get("backup_engine") == "external":
             QMessageBox.information(
-                self, "Keep",
+                self, version.APP_NAME,
                 "Your folder list was saved, but this installation is still using its existing custom backup script. "
                 "That script continues to control backup scope until you enable Keep's built-in backup engine.",
             )
@@ -3684,7 +3686,7 @@ class MainWindow(QWidget):
 
     def configure_schedule(self):
         if self._repo_op_running:
-            QMessageBox.information(self, "Keep", "Wait for the current backup or delete to finish before changing the automatic schedule.")
+            QMessageBox.information(self, version.APP_NAME, "Wait for the current backup or delete to finish before changing the automatic schedule.")
             return False
         dlg = ScheduleDialog(self)
         if dlg.exec() != QDialog.Accepted:
@@ -3692,16 +3694,16 @@ class MainWindow(QWidget):
         requested = dlg.schedule_value()
         if requested.get("enabled") and not _consumer_module.destination_configured(CONFIG):
             QMessageBox.warning(
-                self, "Keep",
+                self, version.APP_NAME,
                 "Choose a backup destination before turning on Automatic Backups.",
             )
             return False
         ok, message = apply_keep_schedule(requested)
         if ok:
-            QMessageBox.information(self, "Keep", message)
+            QMessageBox.information(self, version.APP_NAME, message)
         else:
             QMessageBox.warning(
-                self, "Keep",
+                self, version.APP_NAME,
                 "Keep could not update the automatic backup schedule. Your existing timer state was not assumed to have changed.\n\n"
                 + message,
             )
@@ -3710,11 +3712,11 @@ class MainWindow(QWidget):
 
     def change_backup_destination(self):
         if self._repo_op_running:
-            QMessageBox.information(self, "Keep", "A backup or delete is currently in progress - try again once it finishes.")
+            QMessageBox.information(self, version.APP_NAME, "A backup or delete is currently in progress - try again once it finishes.")
             return
         if shutil.which("borg") is None:
             QMessageBox.warning(
-                self, "Keep",
+                self, version.APP_NAME,
                 "BorgBackup is required before Keep can create or adopt a backup destination. Install BorgBackup, then try again.",
             )
             return
@@ -3734,7 +3736,7 @@ class MainWindow(QWidget):
 
         default_label = os.path.basename(folder.rstrip("/")) or "Backup Destination"
         label, ok = QInputDialog.getText(
-            self, "Keep", "A short name for this destination (shown in the status panel):",
+            self, version.APP_NAME, "A short name for this destination (shown in the status panel):",
             text=default_label,
         )
         label = label.strip() if ok and label.strip() else default_label
@@ -3762,7 +3764,7 @@ class MainWindow(QWidget):
                 parts = []
             if len(parts) < 2 or not parts[0]:
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     f"Could not determine a filesystem UUID for '{folder}' - it may not be on its "
                     f"own removable filesystem. Destination NOT changed; pick Network Storage or "
                     f"Other Location instead if this isn't actually a removable drive.",
@@ -3787,7 +3789,7 @@ class MainWindow(QWidget):
             conflict = _consumer_module.source_destination_conflict(folder, _consumer_module.dedupe_paths(source_paths))
             if conflict:
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "This destination overlaps a folder selected for backup:\n\n"
                     f"{conflict}\n\nChoose a destination outside the folders being backed up.",
                 )
@@ -3797,7 +3799,7 @@ class MainWindow(QWidget):
 
         if looks_like_borg_repo(folder):
             confirmed = QMessageBox.question(
-                self, "Keep",
+                self, version.APP_NAME,
                 f"This looks like an existing Borg repository:\n{folder}\n\n"
                 f"Use this existing repository with Keep? If it is encrypted, Keep will "
                 f"verify access and offer Unlock or key recovery if this computer does not "
@@ -3815,7 +3817,7 @@ class MainWindow(QWidget):
             # once Unlock sets it, including across a destination switch).
             if not self._unmount():
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "Could not unmount the current destination (still in use) - "
                     "try again once whatever's holding it open is done. "
                     "Destination NOT changed.",
@@ -3842,7 +3844,7 @@ class MainWindow(QWidget):
                     info, stderr = run_borg_json_checked(["info", "--json", REPO])
                 if info is None:
                     QMessageBox.warning(
-                        self, "Keep",
+                        self, version.APP_NAME,
                         f"Backup destination is now:\n{label}\n{folder}\n\n"
                         f"But Keep could not authenticate against it just now"
                         f"{' (' + stderr.strip() + ')' if stderr else ''}. "
@@ -3864,10 +3866,10 @@ class MainWindow(QWidget):
                 on_disk_passphrase = ""
             persisted_ok, _ = check_passphrase(REPO, on_disk_passphrase)
             if persisted_ok:
-                QMessageBox.information(self, "Keep", f"Backup destination is now:\n{label}\n{folder}\n\nKeep and automatic backups can use this destination from now on.")
+                QMessageBox.information(self, version.APP_NAME, f"Backup destination is now:\n{label}\n{folder}\n\nKeep and automatic backups can use this destination from now on.")
             else:
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     f"Backup destination is now:\n{label}\n{folder}\n\n"
                     f"Keep can browse it for the rest of this session, but the "
                     f"passphrase isn't saved to disk, so the next SCHEDULED backup "
@@ -3880,7 +3882,7 @@ class MainWindow(QWidget):
             return
 
         confirmed = QMessageBox.question(
-            self, "Keep",
+            self, version.APP_NAME,
             f"'{folder}' doesn't look like an existing Borg repository.\n\n"
             f"Initialize a brand new Borg repository there? You'll choose whether "
             f"to encrypt it in the next step.",
@@ -3903,7 +3905,7 @@ class MainWindow(QWidget):
         # so there is nothing to lose.
         if not self._unmount():
             QMessageBox.warning(
-                self, "Keep",
+                self, version.APP_NAME,
                 "Could not unmount the current destination (still in use) - "
                 "try again once whatever's holding it open is done. Nothing "
                 "was created.",
@@ -3929,7 +3931,7 @@ class MainWindow(QWidget):
         new_dest["encryption"] = "encrypted (repokey-blake2)" if encrypted else "none"
         if not encrypted:
             proceed = QMessageBox.question(
-                self, "Keep",
+                self, version.APP_NAME,
                 "An unencrypted backup can be read by anyone who can access the repository files. "
                 "That may include documents, browser/app profiles, SSH or GPG data, and other private settings.\n\n"
                 "Create it without encryption anyway?",
@@ -3955,7 +3957,7 @@ class MainWindow(QWidget):
             env=init_env, capture_output=True, text=True,
         )
         if result.returncode != 0:
-            QMessageBox.warning(self, "Keep", f"Could not initialize a repository there:\n{result.stderr}\n\nYour existing repository/passphrase are untouched.")
+            QMessageBox.warning(self, version.APP_NAME, f"Could not initialize a repository there:\n{result.stderr}\n\nYour existing repository/passphrase are untouched.")
             return
         export_path = NEW_REPO_KEY_EXPORT_PATH if encrypted else None
         if encrypted:
@@ -3965,7 +3967,7 @@ class MainWindow(QWidget):
             )
             if export_result.returncode != 0:
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     f"Repository was created, but exporting the paper key failed:\n"
                     f"{export_result.stderr}\n\n"
                     f"The key itself is stored inside the repository, so the passphrase "
@@ -3984,10 +3986,10 @@ class MainWindow(QWidget):
             save_passphrase_atomic(passphrase, "new_repository", label)
         set_destination(new_dest)
         if encrypted:
-            QMessageBox.information(self, "Keep", f"New encrypted repository created at:\n{folder}")
+            QMessageBox.information(self, version.APP_NAME, f"New encrypted repository created at:\n{folder}")
             KeyExportDialog(passphrase, export_path, parent=self).exec()
         else:
-            QMessageBox.information(self, "Keep", f"New unencrypted repository created at:\n{folder}")
+            QMessageBox.information(self, version.APP_NAME, f"New unencrypted repository created at:\n{folder}")
         self.refresh_status()
 
     def edit_excludes(self):
@@ -3996,7 +3998,7 @@ class MainWindow(QWidget):
     def compare_archives(self):
         archives = [self.archive_combo.itemText(i) for i in range(self.archive_combo.count())]
         if len(archives) < 2:
-            QMessageBox.information(self, "Keep", "Need at least two archives to compare.")
+            QMessageBox.information(self, version.APP_NAME, "Need at least two archives to compare.")
             return
         CompareArchivesDialog(REPO, archives, self.archive_combo.currentText(), parent=self).exec()
 
@@ -4012,14 +4014,14 @@ class MainWindow(QWidget):
             # set/clear the SAME self._repo_op_running flag, so whichever
             # finished first would incorrectly report "nothing running"
             # while the other was still actually going.
-            QMessageBox.information(self, "Keep", "A backup or delete is already in progress - try again once it finishes.")
+            QMessageBox.information(self, version.APP_NAME, "A backup or delete is already in progress - try again once it finishes.")
             return
         # a passive status read shouldn't delay or contend for the repo
         # lock against something the user actually asked for
         self._stop_status_query()
         archive = self.archive_combo.currentText()
         if not archive:
-            QMessageBox.information(self, "Keep", "No archive selected.")
+            QMessageBox.information(self, version.APP_NAME, "No archive selected.")
             return
         total = self.archive_combo.count()
         warning = (
@@ -4032,14 +4034,14 @@ class MainWindow(QWidget):
         if total <= 1:
             warning += "\n\n⚠ This is your ONLY remaining archive. Deleting it empties the entire backup history."
         confirmed = QMessageBox.warning(
-            self, "Keep — permanently delete this archive?", warning,
+            self, f"{version.APP_NAME} — permanently delete this archive?", warning,
             QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
         )
         if confirmed != QMessageBox.Yes:
             return
 
         if not self._unmount():  # can't delete an archive that's currently mounted
-            QMessageBox.warning(self, "Keep", "Could not unmount the archive browser (still in use) - try again in a moment.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not unmount the archive browser (still in use) - try again in a moment.")
             return
         self._repo_op_running = True
         self.btn_delete_archive.setEnabled(False)
@@ -4074,9 +4076,9 @@ class MainWindow(QWidget):
         self.delete_progress.hide()
         self.lbl_delete_status.hide()
         if ok:
-            QMessageBox.information(self, "Keep", "Archive deleted.")
+            QMessageBox.information(self, version.APP_NAME, "Archive deleted.")
         else:
-            QMessageBox.warning(self, "Keep", error_msg)
+            QMessageBox.warning(self, version.APP_NAME, error_msg)
         self.refresh_status()
 
     # --- backup ---
@@ -4085,7 +4087,7 @@ class MainWindow(QWidget):
         app_logging.record("operation.requested", operation="backup")
         if shutil.which("borg") is None:
             QMessageBox.warning(
-                self, "Keep",
+                self, version.APP_NAME,
                 "BorgBackup is required but was not found on this computer. Install BorgBackup, then try again.",
             )
             return
@@ -4094,13 +4096,13 @@ class MainWindow(QWidget):
             # see its comment for why this matters (found via a reviewer's
             # whole-app sweep: neither operation checked for the other
             # already running, so both could end up active at once)
-            QMessageBox.information(self, "Keep", "A backup or delete is already in progress - try again once it finishes.")
+            QMessageBox.information(self, version.APP_NAME, "A backup or delete is already in progress - try again once it finishes.")
             return
         if CONFIG.get("backup_engine") != "external":
             has_folder = bool(_consumer_module.backup_source_entries(CONFIG))
             if not has_folder and not CONFIG.get("include_app_data", True):
                 QMessageBox.information(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "Nothing is selected for backup yet. Choose Backup > Backup sources… first.",
                 )
                 return
@@ -4114,7 +4116,7 @@ class MainWindow(QWidget):
         # going to fail inside the script anyway
         dest = refresh_destination()
         if not dest["available"]:
-            QMessageBox.warning(self, "Keep", f"Backup destination unavailable:\n{dest['reason']}.\n\nConnect it and try again.")
+            QMessageBox.warning(self, version.APP_NAME, f"Backup destination unavailable:\n{dest['reason']}.\n\nConnect it and try again.")
             self.refresh_status()
             return
         if CONFIG.get("backup_engine") != "external":
@@ -4125,7 +4127,7 @@ class MainWindow(QWidget):
             conflict = _consumer_module.source_destination_conflict(dest["repo"], source_paths)
             if conflict:
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     "The backup destination overlaps a folder selected for backup:\n\n"
                     f"{conflict}\n\nChoose a destination outside the folders being backed up, or remove that folder from Backup Sources.",
                 )
@@ -4141,7 +4143,7 @@ class MainWindow(QWidget):
         # backup now would just fail waiting for it (or worse, wait the
         # full --lock-wait with nothing ever going to release it)
         if not self._unmount():
-            QMessageBox.warning(self, "Keep", "Could not unmount the archive browser (still in use) - try again in a moment.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not unmount the archive browser (still in use) - try again in a moment.")
             return
         self._repo_op_running = True
         self.btn_backup.setEnabled(False)
@@ -4258,7 +4260,7 @@ class MainWindow(QWidget):
         self.backup_progress.hide()
         self.lbl_progress_detail.hide()
         if not ok and not self.worker.user_stopped:
-            QMessageBox.warning(self, "Keep", "Backup did not finish successfully. Open Show log for details.")
+            QMessageBox.warning(self, version.APP_NAME, "Backup did not finish successfully. Open Show log for details.")
         # a successful manual Backup Now explicitly initiated this, so
         # jumping the archive picker to what it just created is expected,
         # not disruptive (_apply_archive_listing defaults to preserving
@@ -4413,7 +4415,7 @@ class MainWindow(QWidget):
             # will mount normally.
             return False
         if not self._unmount():
-            QMessageBox.warning(self, "Keep", "Could not switch archives - the current one is still in use. Try again in a moment.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not switch archives - the current one is still in use. Try again in a moment.")
             return False
         os.makedirs(MOUNTPOINT, exist_ok=True)
         # defensively clear any stale mount left by a prior crashed/killed instance,
@@ -4440,7 +4442,7 @@ class MainWindow(QWidget):
                 # bare error with no context.
                 self.refresh_status()
                 QMessageBox.warning(
-                    self, "Keep",
+                    self, version.APP_NAME,
                     f"'{archive}' is no longer available - most likely a more "
                     f"recent backup's cleanup step removed it while you were "
                     f"browsing.\n\nThe archive list has been refreshed; pick "
@@ -4448,7 +4450,7 @@ class MainWindow(QWidget):
                 )
                 return False
             if not ok:
-                QMessageBox.warning(self, "Keep", f"Could not mount archive:\n{stderr}")
+                QMessageBox.warning(self, version.APP_NAME, f"Could not mount archive:\n{stderr}")
                 return False
         self.mounted = True
         self.mounted_archive = archive
@@ -4560,7 +4562,7 @@ class MainWindow(QWidget):
                 return False
             ok, err = import_key_file(repo, path)
             if not ok:
-                QMessageBox.warning(self, "Keep", f"Could not import that key file:\n{err}")
+                QMessageBox.warning(self, version.APP_NAME, f"Could not import that key file:\n{err}")
                 return False
             return True
         if dlg.choice == KeyRecoveryDialog.PAPER_KEY:
@@ -4672,7 +4674,7 @@ class MainWindow(QWidget):
             names = [os.path.basename(self.fs_model.filePath(index)) or self.fs_model.filePath(index)
                      for index in self.tree.selectionModel().selectedRows()]
         if not names:
-            QMessageBox.information(self, "Keep", "Check the items you want to restore first." if picker is not None
+            QMessageBox.information(self, version.APP_NAME, "Check the items you want to restore first." if picker is not None
                                     else "Select one or more files or folders first (Ctrl+click or Shift+click for several).")
             return
         archive = self.friendly_archive(self.archive_combo.currentText()) if self.archive_combo.currentText() else "this backup"
@@ -4695,7 +4697,7 @@ class MainWindow(QWidget):
             if dialog.exec() != QDialog.Accepted:
                 return
             if REPO != repository or self.archive_combo.currentText() != archive_name:
-                QMessageBox.warning(self, "Keep", "The backup changed. Review your selection again.")
+                QMessageBox.warning(self, version.APP_NAME, "The backup changed. Review your selection again.")
                 return
             if picker is not None:
                 picker.restore_checked_safe(dest_dir=dialog.destination, entries=plan)
@@ -4710,11 +4712,11 @@ class MainWindow(QWidget):
         if rel_paths is None:
             rows = self.tree.selectionModel().selectedRows()
             if not rows:
-                QMessageBox.information(self, "Keep", "Select one or more files/folders first.")
+                QMessageBox.information(self, version.APP_NAME, "Select one or more files/folders first.")
                 return
             rel_paths = [os.path.relpath(self.fs_model.filePath(idx), MOUNTPOINT) for idx in rows]
         if not self.ensure_mounted():
-            QMessageBox.warning(self, "Keep", "Could not access the archive - nothing was restored.")
+            QMessageBox.warning(self, version.APP_NAME, "Could not access the archive - nothing was restored.")
             return
         sources = [f"{MOUNTPOINT}/{rel_path}" for rel_path in rel_paths]
         if not dest_dir:  # also False when called straight from a button's clicked(bool)

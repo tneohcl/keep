@@ -1830,7 +1830,7 @@ cc_help.close()
 
 cc_about = main.AboutDialog()
 cc_about_text = " ".join(lbl.text() for lbl in cc_about.findChildren(main.QLabel) if lbl.text())
-check("Phase CC: AboutDialog names the app", "Keep" in cc_about_text)
+check("Phase CC: AboutDialog names the app", "Keep Backup" in cc_about_text)
 check("Phase CC: AboutDialog shows the live repo path", main.REPO in cc_about_text)
 check("Phase CC: AboutDialog shows the config file path", str(main.CONFIG_PATH) in cc_about_text)
 cc_about.close()
@@ -1868,8 +1868,8 @@ if win_cc is not None:
     if cc_top_action is not None:
         cc_help_menu = cc_top_action.menu()
         cc_action_texts = [a.text() for a in cc_help_menu.actions()]
-        check("Phase CC: Help menu has 'Keep Help' then 'About Keep', in that order",
-              cc_action_texts == ["Keep help", "About Keep"], cc_action_texts)
+        check("Phase CC: Help menu has 'Keep Backup Help' then 'About Keep Backup', in that order",
+              cc_action_texts == ["Keep Backup Help", "About Keep Backup"], cc_action_texts)
 
         cc_opened = []
         RealHelpExec = main.HelpDialog.exec

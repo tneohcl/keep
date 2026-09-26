@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Keep
+Name=Keep Backup
 Comment=Back up and recover your files
 Exec=keep
 Icon=keep
