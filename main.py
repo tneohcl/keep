@@ -150,6 +150,14 @@ def effective_backup_command():
     return _consumer_module.backup_command(CONFIG, str(CONFIG_PATH), str(APP_DIR), sys.executable)
 
 
+def extend_icon_search_paths():
+    """Inside a Flatpak, let Qt find other apps' icons (host.icon_dirs)."""
+    paths = QIcon.themeSearchPaths()
+    extra = [str(path) for path in host.icon_dirs(Path.home()) if str(path) not in paths]
+    if extra:
+        QIcon.setThemeSearchPaths(paths + extra)
+
+
 def configured_timer_unit():
     return CONFIG.get("schedule", {}).get("timer_unit") or "keep-backup.timer"
 
@@ -338,7 +346,8 @@ def is_native_process_running(process_names):
     "is any app on this machine running" scan."""
     for name in process_names:
         try:
-            out = subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=5)
+            # The host's processes: inside a Flatpak, pgrep sees only the sandbox's.
+            out = subprocess.run(host.command(["pgrep", "-x", name]), capture_output=True, timeout=5)
             if out.returncode == 0:
                 return True
         except Exception:
@@ -4703,6 +4712,7 @@ if __name__ == "__main__":
     # launcher). On Wayland this is the app_id the taskbar uses to find the
     # icon - without it the window shows up as a generic "python3" app.
     app.setDesktopFileName(host.flatpak_id() or "keep")
+    extend_icon_search_paths()
     win = MainWindow()
     win.show()
     app_logging.record("application.ready")

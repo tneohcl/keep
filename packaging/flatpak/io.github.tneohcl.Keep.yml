@@ -22,6 +22,8 @@ finish-args:
   - --filesystem=host
   - --filesystem=~/.var/app
   - --filesystem=xdg-data/flatpak:ro
+  - --filesystem=host-os:ro
+  - --filesystem=/var/lib/flatpak:ro
   - --talk-name=org.freedesktop.Flatpak
   - --talk-name=org.freedesktop.Notifications
 modules:

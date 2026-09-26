@@ -32,8 +32,11 @@ class InsideFlatpak(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_host_tools_go_through_flatpak_spawn(self):
+        # --directory=/: flatpak-spawn otherwise runs the command in the
+        # caller's working directory, which may exist only in the sandbox
+        # (e.g. /app/share/keep), and the host then refuses to start it.
         self.assertEqual(host.command(["findmnt", "-T", "/mnt/nas"]),
-                         ["flatpak-spawn", "--host", "findmnt", "-T", "/mnt/nas"])
+                         ["flatpak-spawn", "--host", "--directory=/", "findmnt", "-T", "/mnt/nas"])
 
     def test_mount_point_is_shared_with_the_host(self):
         with patch.dict(os.environ, {"XDG_RUNTIME_DIR": "/run/user/1000"}):

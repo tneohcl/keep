@@ -20,6 +20,10 @@ lightly sandboxed:
   to back up folders, other apps' data and Flatpak permission overrides, and to reach the
   destination. Without `xdg-data/flatpak`, the "Flatpak App Permissions" item
   (`~/.local/share/flatpak/overrides`) is invisible to the app and was silently skipped.
+- `host-os:ro` and `/var/lib/flatpak:ro`, so Keep can tell which apps are installed: the
+  sandbox's `/usr` is the runtime's, so the host's launchers and executables are read under
+  `/run/host` and system Flatpaks under `/var/lib/flatpak` (`host.system_path`, `host.which`,
+  `host.data_dirs`). Without them the app chooser saw only per-user Flatpaks.
 - `--device=all` for `/dev/fuse` (browsing a backup mounts it with `borg mount`).
 - `--talk-name=org.freedesktop.Flatpak`, so `host.py` can run `systemctl --user`
   (the schedule), `flatpak` (installed apps), `findmnt` (drives) and `fusermount`
