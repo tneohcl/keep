@@ -166,6 +166,26 @@ class RealIconNames(unittest.TestCase):
         self.assertEqual(applications.icon_names(entry, self.installed)[0], "dialog-password")
 
 
+class RunningAppCheck(unittest.TestCase):
+    """Before restoring an app's data over the live copy, Keep checks the app
+    isn't running. Inside the Flatpak, pgrep sees only the sandbox's own
+    processes, so every app looked closed (found in the parity audit)."""
+
+    def test_pgrep_asks_the_host_inside_the_flatpak(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        import main
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(argv)
+            return type("Done", (), {"returncode": 0})()
+        with patch.object(host, "flatpak_id", return_value=APP_ID), patch.object(main.subprocess, "run", fake_run):
+            self.assertTrue(main.is_native_process_running(["krita"]))
+        self.assertEqual(calls, [["flatpak-spawn", "--host", "pgrep", "-x", "krita"]])
+
+
 class OutsideTheFlatpakUnchanged(unittest.TestCase):
     def test_paths_and_lookups_are_the_host_itself(self):
         with patch.object(host, "flatpak_id", return_value=None):
