@@ -38,13 +38,15 @@ import os
 import subprocess
 import sys
 
+import host
+
 
 def _findmnt_target_for_uuid(uuid):
     """Current mountpoint of the filesystem with this UUID, or None if it
     isn't mounted (not connected, or connected but not yet mounted)."""
     try:
         out = subprocess.run(
-            ["findmnt", "-n", "-o", "TARGET", "-S", f"UUID={uuid}"],
+            host.command(["findmnt", "-n", "-o", "TARGET", "-S", f"UUID={uuid}"]),
             capture_output=True, text=True, timeout=5,
         )
         target = out.stdout.strip()
@@ -56,7 +58,7 @@ def _findmnt_target_for_uuid(uuid):
 def mount_details(path):
     """Read structured mount records; autofs is a trigger, not the backing FS."""
     try:
-        out = subprocess.run(["findmnt", "--json", "--target", path, "--output", "TARGET,FSTYPE"],
+        out = subprocess.run(host.command(["findmnt", "--json", "--target", path, "--output", "TARGET,FSTYPE"]),
                              capture_output=True, text=True, timeout=5)
         if out.returncode != 0:
             return None

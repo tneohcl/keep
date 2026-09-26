@@ -14,6 +14,7 @@ import tempfile
 import borg_ops
 import consumer
 import destination
+import host
 from operation_lock import RepositoryLock, RepositoryBusy
 
 
@@ -50,12 +51,12 @@ def main(argv=None):
                 result = {"destination": dest, "recent_activity": consumer.recent_activity(logdir),
                           "configured_schedule": config.get("schedule", {}),
                           "borg_available": bool(shutil.which("borg"))}
-                if shutil.which("systemctl"):
+                if shutil.which("systemctl") or host.flatpak_id():
                     unit = config.get("schedule", {}).get("timer_unit") or "keep-backup.timer"
                     try:
-                        timer = subprocess.run(["systemctl", "--user", "show", unit,
-                                                "-p", "ActiveState", "-p", "UnitFileState",
-                                                "-p", "NextElapseUSecRealtime"],
+                        timer = subprocess.run(host.command(["systemctl", "--user", "show", unit,
+                                                             "-p", "ActiveState", "-p", "UnitFileState",
+                                                             "-p", "NextElapseUSecRealtime"]),
                                                capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
                         result["timer"] = dict(line.split("=", 1) for line in timer.stdout.splitlines() if "=" in line) if timer.returncode == 0 else {"available": False}
                     except (OSError, subprocess.TimeoutExpired):

@@ -16,6 +16,8 @@ import json
 import tempfile
 from pathlib import Path
 
+import host
+
 
 def config_path(app_dir: str) -> Path:
     """Select user state, preserving a genuine legacy configuration once."""
@@ -381,6 +383,9 @@ def backup_command(config: dict, config_path: str, app_dir: str, python_exe: str
     normalize_config(config)
     if config.get("backup_engine") == "external" and config.get("backup_script"):
         return [os.path.expanduser(config["backup_script"])]
+    flatpak_run = host.backup_command(config_path)
+    if flatpak_run:
+        return flatpak_run
     python_exe = python_exe or sys.executable or "/usr/bin/python3"
     return [python_exe, os.path.join(app_dir, "keep_backup.py"), "--config", config_path]
 
