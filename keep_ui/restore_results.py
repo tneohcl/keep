@@ -22,7 +22,7 @@ class RestoreResultsDialog(QDialog):
             heading = "Failed (some files may have been copied):"
             if not direct:
                 heading = ("Not finished. Files already copied are complete, and the folder "
-                           "is marked with RESTORE-INCOMPLETE.txt:")
+                           "has a RESTORE-INCOMPLETE note:")
             sections.append(heading + "\n" + "\n\n".join(failed))
         if skipped:
             sections.append("Skipped (sockets, pipes and device files can't be restored as files):\n"

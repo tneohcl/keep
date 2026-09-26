@@ -133,9 +133,14 @@ class RecoveryAccessDialog(QDialog):
         elif not info:
             self._verified_row("Passphrase", "never", "Not checked: the backup couldn't be read.")
         exported = recovery_test.load_access(repository, repository_id=self.repository_id).get("key_exported")
+        legacy = recovery_test.legacy_access(repository)
         if is_encrypted(info):
             if exported:
                 self._verified_row("Key file", "ok", f"Exported with Keep {self._friendly(exported)}.")
+            elif legacy.get("key_exported"):
+                self._verified_row("Key file", "warning" if encryption_fact(info)[0] == "warning" else "info",
+                                   f"Exported with Keep {self._friendly(legacy['key_exported'])}, before Keep recorded "
+                                   "which backup it belongs to. Export again to be sure you have this backup's key.")
             elif encryption_fact(info)[0] == "warning":
                 self._verified_row("Key file", "error", "Not exported yet. Without it this backup can't be opened on a new computer.")
             else:
@@ -156,6 +161,8 @@ class RecoveryAccessDialog(QDialog):
             box.setChecked(state == "confirmed")
             note = QLabel(f"Confirmed {self._friendly(when)}" if state == "confirmed"
                           else f"Last confirmed {self._friendly(when)}. Check again." if state == "stale" and when
+                          else f"Confirmed {self._friendly(legacy[key])} before Keep recorded which backup this is. "
+                               "Check again to confirm it for this backup." if legacy.get(key)
                           else "")
             set_role(note, "caption" if state == "confirmed" else "warning" if state == "stale" else "caption")
             note.setWordWrap(True)

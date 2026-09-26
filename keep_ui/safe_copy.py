@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import tempfile
 
-PARTIAL_SUFFIX = ".keep-partial"
+PARTIAL_PREFIX = ".keep-partial-"
 INCOMPLETE_MARKER = "RESTORE-INCOMPLETE.txt"
 
 
@@ -15,9 +16,10 @@ class CopyCancelled(Exception):
 
 
 def copy_new(source, target, cancelled, skipped=None):
-    """Copy `source` to the new path `target`. Files are written under a
-    temporary name and renamed when complete, so a cancelled or failed copy
-    never leaves a truncated file under the real name. Sockets, FIFOs and
+    """Copy `source` to the new path `target`. Files are written to a
+    uniquely created temporary file and renamed when complete, so a cancelled
+    or failed copy never leaves a truncated file under the real name, and
+    cleanup only ever removes the file this copy created. Sockets, FIFOs and
     device files are skipped and listed in `skipped` instead of failing the
     whole folder they sit in."""
     if cancelled():
@@ -36,10 +38,11 @@ def copy_new(source, target, cancelled, skipped=None):
             raise ValueError("Unsupported special file in backup")
         skipped.append(str(source))
     else:
-        partial = target.with_name(f".{target.name}{PARTIAL_SUFFIX}")
+        # mkstemp creates a new file exclusively (never an existing file or a
+        # symlink), so whatever names the backup contains can't collide with it.
+        fd, partial = tempfile.mkstemp(prefix=PARTIAL_PREFIX, dir=target.parent)
         try:
-            # Exclusive creation also rejects dangling destination symlinks.
-            with source.open('rb') as src, partial.open('xb') as dst:
+            with source.open('rb') as src, os.fdopen(fd, 'wb') as dst:
                 while True:
                     if cancelled():
                         raise CopyCancelled()
@@ -62,7 +65,7 @@ def restore_entries(entries, destination, cancelled=lambda: False, progress=lamb
     Returns (done, failed, skipped): skipped lists special files left out.
 
     Existing roots are rejected, even if empty. Files copied before a cancel
-    or error are complete, and the folder gets RESTORE-INCOMPLETE.txt, so
+    or error are complete, and the folder gets a RESTORE-INCOMPLETE note, so
     what's there is never mistaken for a finished restore."""
     done, failed, skipped = [], [], []
     root = Path(destination)
@@ -108,9 +111,24 @@ def restore_entries(entries, destination, cancelled=lambda: False, progress=lamb
 
 
 def _mark_incomplete(root, failed):
+    """Leave a note saying the restore didn't finish. Created exclusively and
+    never through a symlink: if restored content already uses the name, the
+    note takes the next free one (RESTORE-INCOMPLETE-2.txt, ...)."""
     note = ("This restore did not finish. The files in this folder are complete copies,\n"
             "but some of the items you chose are missing or only partly restored.\n\n"
             f"Stopped: {datetime.now().astimezone().isoformat(timespec='seconds')}\n\n"
             + "\n".join(failed) + "\n")
-    with contextlib.suppress(OSError):
-        (root / INCOMPLETE_MARKER).write_text(note, encoding="utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    stem, suffix = os.path.splitext(INCOMPLETE_MARKER)
+    for n in range(1, 100):
+        path = root / (INCOMPLETE_MARKER if n == 1 else f"{stem}-{n}{suffix}")
+        try:
+            fd = os.open(path, flags, 0o644)
+        except FileExistsError:
+            continue
+        except OSError:
+            return None
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(note)
+        return path
+    return None

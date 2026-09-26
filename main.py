@@ -3459,15 +3459,6 @@ class MainWindow(QWidget):
         self._verified_repo_info = (queried_repo, info, len(listing.get("archives", [])) if listing else None,
                                     datetime.now().astimezone().isoformat(timespec="seconds"))
         repository_id = self._current_repository_id()
-        archive_times = [a.get("start") or a.get("time") for a in (listing or {}).get("archives", [])]
-        archive_times = [t for t in archive_times if t]
-        if repository_id and archive_times:
-            # Records from before Keep stored repository IDs: tie them to this
-            # repository when their dates allow it (recovery_test explains).
-            try:
-                recovery_test.adopt_legacy_records(queried_repo, repository_id, min(archive_times))
-            except OSError as exc:
-                app_logging.record("records.adopt_failed", error=type(exc).__name__)
         self._refresh_activity()  # now that the repository ID is known
         self._refresh_facts(DEST_STATUS)
         verdict, ts, verified = backup_history(REPO or "", repository_id)

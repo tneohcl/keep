@@ -266,16 +266,16 @@ def status(record_, repository, now=None, repository_id=None):
 
     state: "never" (no test for THIS repository), "ok", "warning" (passed but
     over six months ago), "error" (the last test failed), or "info": a test
-    recorded for this location that Keep can't tie to this repository yet
-    (its ID isn't known yet, or the record predates stored IDs). That's shown
-    as history, never as proof, and a recorded failure is still an error."""
+    recorded for this location that Keep can't tie to this repository (its ID
+    isn't known yet, or the record predates stored IDs). That's shown as
+    history, never as proof, and a recorded failure is still an error. No
+    date can settle it either way (retention pruning moves the oldest
+    archive), so a new test is what records the ID."""
     if not isinstance(record_, dict) or record_.get("repository") != repository:
         return "never", None, NEVER_TESTED
     recorded_id = record_.get("repository_id")
     if recorded_id and repository_id and recorded_id != repository_id:
         return "never", None, NEVER_TESTED
-    if record_.get("superseded"):
-        return "never", None, "Your last recorded test was for an earlier backup at this location. " + NEVER_TESTED
     when = record_.get("finished")
     if record_.get("result") != "passed":
         return "error", when, MESSAGES.get(record_.get("reason"), MESSAGES["unavailable"])
@@ -290,68 +290,6 @@ def status(record_, repository, now=None, repository_id=None):
     except (TypeError, ValueError):
         return "warning", when, "Test again to confirm recovery still works."
     return "ok", when, "A file was restored using only your passphrase."
-
-
-def _moment(iso):
-    """Aware datetime for an ISO timestamp (Borg's naive archive times are
-    local time), or None."""
-    try:
-        value = datetime.datetime.fromisoformat(iso)
-    except (TypeError, ValueError):
-        return None
-    return value if value.tzinfo else value.astimezone()
-
-
-def _recorded_for_current(recorded_iso, oldest_archive_iso):
-    """A record written before Keep stored repository IDs can only belong to
-    the current repository if it's no older than that repository's oldest
-    archive: a repository recreated at the same path starts with archives
-    newer than anything recorded against the one it replaced."""
-    recorded, oldest = _moment(recorded_iso), _moment(oldest_archive_iso)
-    return bool(recorded and oldest and recorded >= oldest)
-
-
-def _write_private(path, data):
-    consumer.write_config(path, data)
-    os.chmod(path, 0o600)
-
-
-def adopt_legacy_records(repository, repository_id, oldest_archive, root=None):
-    """Tie records written before Keep stored repository IDs to the current
-    repository when their dates allow it (see _recorded_for_current).
-    Records that can't belong to it are kept, marked as history, never deleted."""
-    if not (repository and repository_id and oldest_archive):
-        return
-    root = Path(root or state_root())
-
-    test = load(root)
-    if (isinstance(test, dict) and test.get("repository") == repository
-            and not test.get("repository_id") and not test.get("superseded")):
-        if _recorded_for_current(test.get("finished"), oldest_archive):
-            test["repository_id"] = repository_id
-        else:
-            test["superseded"] = True
-        _write_private(root / STATE_FILE, test)
-
-    everything = _load_all_access(root)
-    legacy = everything.get(repository)          # entries used to be keyed by path
-    if isinstance(legacy, dict):
-        entry = everything.setdefault(repository_id, {})
-        carried = {key: when for key, when in legacy.items()
-                   if key not in entry and _recorded_for_current(when, oldest_archive)}
-        if carried:
-            entry.update(carried)
-            _write_private(root / ACCESS_FILE, everything)
-
-    check_path = root / "last-check.json"
-    try:
-        check = json.loads(check_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        check = None
-    if (isinstance(check, dict) and check.get("repository") == repository and not check.get("repository_id")
-            and _recorded_for_current(check.get("finished") or check.get("started"), oldest_archive)):
-        check["repository_id"] = repository_id
-        _write_private(check_path, check)
 
 
 # --------------------------------------------------------------------------
@@ -370,6 +308,13 @@ def _load_all_access(root=None):
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def legacy_access(repository, root=None):
+    """Confirmations saved before Keep stored repository IDs (keyed by path).
+    History only: they are never counted as confirmed for a repository."""
+    entry = _load_all_access(root).get(repository) if repository else None
+    return entry if isinstance(entry, dict) else {}
 
 
 def load_access(repository, root=None, repository_id=None):
