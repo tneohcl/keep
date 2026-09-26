@@ -247,6 +247,48 @@ class RestoreNameCollisions(unittest.TestCase):
         self.assertTrue((dest / "RESTORE-INCOMPLETE.txt").is_symlink())
 
 
+class TemporaryFileOwnership(unittest.TestCase):
+    """Review of b26c578: the temporary file's descriptor must be closed, and
+    the file removed, on every path, including a source that can't be opened."""
+
+    def test_unreadable_source_closes_and_removes_the_temporary_file(self):
+        import tempfile as tempfile_module
+        from keep_ui import safe_copy
+        root = Path(tempfile.mkdtemp())
+        unreadable = root / "locked.bin"
+        unreadable.write_bytes(b"x")
+        readable = root / "fine.bin"
+        readable.write_bytes(b"ok")
+        created = []
+        real_mkstemp, real_open = tempfile_module.mkstemp, Path.open
+
+        def recording_mkstemp(*args, **kwargs):
+            fd, name = real_mkstemp(*args, **kwargs)
+            created.append((fd, os.fstat(fd).st_ino, name))
+            return fd, name
+
+        def failing_open(path, *args, **kwargs):
+            if path == unreadable:
+                raise PermissionError(13, "Permission denied", str(path))
+            return real_open(path, *args, **kwargs)
+        dest = root / "restore"
+        with patch.object(safe_copy.tempfile, "mkstemp", recording_mkstemp), \
+                patch.object(Path, "open", failing_open):
+            done, failed, skipped = restore_entries(
+                [(unreadable, "locked.bin", "Locked"), (readable, "fine.bin", "Fine")], dest)
+        self.assertEqual((len(done), len(failed)), (1, 1))
+        self.assertIn("Permission denied", failed[0])
+        self.assertEqual((dest / "fine.bin").read_bytes(), b"ok")
+        self.assertEqual(len(created), 2)
+        for fd, inode, name in created:
+            try:
+                still_open = os.fstat(fd).st_ino == inode
+            except OSError:
+                still_open = False
+            self.assertFalse(still_open, f"descriptor {fd} for {name} was left open")
+            self.assertFalse(os.path.lexists(name), f"{name} was left behind")
+
+
 @unittest.skipUnless(hasattr(os, "mkfifo"), "needs FIFOs")
 class SpecialFiles(unittest.TestCase):
     """Issue 4: a FIFO inside a folder must not fail the whole folder."""
