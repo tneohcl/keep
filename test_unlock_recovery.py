@@ -2730,19 +2730,21 @@ class PPHeadlineProbe(QWidget):
     def __init__(self):
         super().__init__()
         self.lbl_headline = main.QLabel()
+        from keep_ui.status_icons import SuccessBadge
+        self.headline_icon = SuccessBadge("never", 48)
 
 
 pp_unavailable = PPHeadlineProbe()
 pp_unavailable._apply_status_headline(False, "ok", "2026-09-14T04:00:00")
 check("Phase PP: headline - destination unavailable beats everything else, is truthful (not 'needs attention')",
-      pp_unavailable.lbl_headline.text() == "! Backup destination unavailable")
+      pp_unavailable.lbl_headline.text() == "Backup destination unavailable")
 check("Phase PP: headline - destination-unavailable state is colored as destructive",
       pp_unavailable.lbl_headline.property("role") == "error")
 
 pp_failed = PPHeadlineProbe()
 pp_failed._apply_status_headline(True, "FAILED", "2026-09-14T04:00:00")
 check("Phase PP: headline - failed last attempt is truthful ('Last backup failed', not 'needs attention'), with no timestamp (duplicates 'Last attempt:'/'Last backup:' rows already visible below it - reviewer round 6)",
-      pp_failed.lbl_headline.text() == "! Last backup failed")
+      pp_failed.lbl_headline.text() == "Last backup failed")
 check("Phase PP: headline - failed state is colored as destructive",
       pp_failed.lbl_headline.property("role") == "error")
 
@@ -2754,11 +2756,17 @@ check("Phase PP: headline - never-run state is neutral, not alarming",
 pp_ok = PPHeadlineProbe()
 pp_ok._apply_status_headline(True, "ok", "2026-09-14T04:00:00")
 check("Phase PP: headline - the healthy state is truthful ('completed successfully', never 'up to date' - that claims a currentness guarantee this data doesn't verify), with no timestamp (duplicate of the row below it - reviewer round 6)",
-      pp_ok.lbl_headline.text() == "✓ Last backup completed successfully")
+      pp_ok.lbl_headline.text() == "Last backup completed successfully")
 check("Phase PP: headline - 'up to date' phrasing never appears anywhere in this method's output",
       "up to date" not in pp_ok.lbl_headline.text().lower())
 check("Phase PP: headline - the healthy state is NOT colored as destructive",
       pp_ok.lbl_headline.property("role") != "error")
+
+check("Phase PP: success badge is only green for successful backup",
+      pp_ok.headline_icon.state() == "ok" and
+      pp_failed.headline_icon.state() == "error" and
+      pp_unavailable.headline_icon.state() == "error" and
+      pp_never.headline_icon.state() == "never")
 
 pp_content = main.QLabel("real content")
 pp_section = main.DisclosureSection("Show X", "Hide X", pp_content)
@@ -3137,10 +3145,10 @@ if win_ss is not None:
     # Apple-esque hierarchy this whole redesign already established ---
     win_ss._apply_status_headline(True, "FAILED", "2026-09-14T04:00:00")
     check("Phase SS: the FAILED headline no longer carries a duplicate timestamp",
-          win_ss.lbl_headline.text() == "! Last backup failed", win_ss.lbl_headline.text())
+          win_ss.lbl_headline.text() == "Last backup failed", win_ss.lbl_headline.text())
     win_ss._apply_status_headline(True, "ok", "2026-09-14T04:00:00")
     check("Phase SS: the healthy headline no longer carries a duplicate timestamp",
-          win_ss.lbl_headline.text() == "✓ Last backup completed successfully", win_ss.lbl_headline.text())
+          win_ss.lbl_headline.text() == "Last backup completed successfully", win_ss.lbl_headline.text())
 main.CONFIG["destination"] = RealCONFIG_destination_ss
 
 print("=== Phase TT: a manually Stopped backup is distinguished from a genuinely FAILED one ===")
