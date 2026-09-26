@@ -1,6 +1,7 @@
 """Regression tests for the PR #3 follow-ups: unknown repository identity,
 records written before repository IDs were stored, cancelled restores and
 unsupported special files. Each case failed on the code PR #3 merged."""
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -101,7 +102,10 @@ class UnknownIdentityHeadline(unittest.TestCase):
 class LegacyRecords(unittest.TestCase):
     """Issue 2: records written before Keep stored repository IDs."""
 
-    OLDEST_ARCHIVE = "2026-09-25T06:14:48.000000"
+    # Borg reports archive times without a timezone, in local time: build the
+    # oldest archive's naive local time in whatever zone the tests run in.
+    OLDEST_ARCHIVE = (datetime.fromisoformat("2026-09-25T06:14:48+08:00")
+                      .astimezone().replace(tzinfo=None).isoformat())
 
     def setUp(self):
         self.root = tempfile.mkdtemp()
