@@ -135,9 +135,57 @@ class StatusDot(QWidget):
         p.drawEllipse(QRectF(0.5, 0.5, self.width() - 1, self.height() - 1))
 
 
+_ZWSP = "\u200b"
+_BREAK_AFTER = set("/\\-_·:@+|")
+_LONGEST_RUN = 20
+
+
+def _wrappable(text: str) -> str:
+    """Display copy of `text` that word wrap can fit into any column: a
+    zero-width space after path and name separators, and every
+    _LONGEST_RUN characters of a run that has no break at all (hashes, IDs).
+    Ordinary words are shorter and never break mid-word. Qt's own break
+    rules around hyphens differ by platform, so they are not relied on."""
+    out, run = [], 0
+    for char in text:
+        if char.isspace():
+            run = 0
+        elif run == _LONGEST_RUN:  # a longer run: break before its next character
+            out.append(_ZWSP)
+            run = 1
+        else:
+            run += 1
+        out.append(char)
+        if char in _BREAK_AFTER:
+            out.append(_ZWSP)
+            run = 0
+    return "".join(out)
+
+
+class _FittingLabel(QLabel):
+    """A word-wrapped label that sets no minimum width: its width comes from
+    the column and the text wraps into it, at any font size. Its size hint
+    is the text on one line; QLabel's own hint guesses a squarish block, so
+    a list sized from it came out far taller than its rows."""
+
+    def __init__(self, text: str, name: str):
+        super().__init__(text)
+        self.setObjectName(name)
+        self.setWordWrap(True)
+        self.setMinimumWidth(1)  # an explicit minimum overrides the longest word's
+
+    def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        margins = self.contentsMargins()
+        width = (self.fontMetrics().horizontalAdvance(self.text().replace(_ZWSP, ""))
+                 + margins.left() + margins.right() + 2 * self.margin())
+        return QSize(width, self.heightForWidth(width))
+
+
 class SettingRow(QPushButton):
     """One setting, two lines: the label, and under it the current value
     (wraps, never truncates) with an optional status dot; a chevron trails.
+    Label and value wrap at any font size, so a row fits the width it is
+    given rather than widening its column.
     An optional leading icon names the kind of setting. A real button, so it
     gets keyboard focus, Space/Enter and a Button accessibility role; the
     child widgets ignore the mouse."""
@@ -157,11 +205,12 @@ class SettingRow(QPushButton):
         self._icon = QLabel()
         self._icon.setObjectName("odcsSettingIcon")
         self._icon.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
-        self._label = QLabel(label)
-        self._label.setObjectName("odcsSettingLabel")
-        self._value = QLabel(value)
-        self._value.setObjectName("odcsSettingValue")
-        self._value.setWordWrap(True)
+        self._text = value
+        self._label = _FittingLabel(_wrappable(label), "odcsSettingLabel")
+        self._label_text = label
+        # An empty value still takes its line (constant geometry): a row whose
+        # value has not loaded yet is already as tall as it will be.
+        self._value = _FittingLabel(_wrappable(value) or _ZWSP, "odcsSettingValue")
         self._dot = StatusDot("ok")
         self._dot.hide()
         self._chevron = QLabel("›")
@@ -193,10 +242,10 @@ class SettingRow(QPushButton):
         self._update_accessible()
 
     def label(self) -> str:
-        return self._label.text()
+        return self._label_text
 
     def value(self) -> str:
-        return self._value.text()
+        return self._text
 
     def indicator(self) -> str | None:
         return self._dot.state() if not self._dot.isHidden() else None
@@ -224,7 +273,8 @@ class SettingRow(QPushButton):
         """state: "" | "warning" | "error" colours the value. indicator: a
         status dot before it ("ok" | "warning" | "error" | "never"), or None.
         Either way the words carry the meaning."""
-        self._value.setText(value)
+        self._text = value
+        self._value.setText(_wrappable(value) or _ZWSP)
         set_role(self._value, state or "secondary")
         self._dot.setVisible(indicator is not None)
         if indicator is not None:
@@ -233,7 +283,7 @@ class SettingRow(QPushButton):
         self.updateGeometry()
 
     def _update_accessible(self) -> None:
-        self.setAccessibleName(f"{self._label.text()}: {self._value.text()}. Change")
+        self.setAccessibleName(f"{self._label_text}: {self._text}. Change")
 
     # QPushButton sizes itself from its own text; this one is laid out.
     def sizeHint(self) -> QSize:  # noqa: N802
@@ -258,9 +308,7 @@ class SettingsList(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(6)
         if heading:
-            title = QLabel(heading)
-            title.setObjectName("odcsGroupHeading")
-            outer.addWidget(title)
+            outer.addWidget(_FittingLabel(heading, "odcsGroupHeading"))
         self._box = QFrame()
         self._box.setObjectName("odcsSettingsList")
         # Minimum: the rows' own base.qss `min-height: 0` lets each shrink to
@@ -354,9 +402,7 @@ class StatusFacts(QFrame):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(6)
         if heading:
-            title = QLabel(heading)
-            title.setObjectName("odcsGroupHeading")
-            outer.addWidget(title)
+            outer.addWidget(_FittingLabel(heading, "odcsGroupHeading"))
         self._grid = QGridLayout()
         self._grid.setHorizontalSpacing(0)  # cells carry the gap, so hairlines join up
         self._grid.setVerticalSpacing(0)

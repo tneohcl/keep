@@ -4600,7 +4600,9 @@ class MainWindow(QWidget):
         margins = self.backup_panel.layout().contentsMargins()
         bar = self.status_sidebar.verticalScrollBar().sizeHint().width()
         margins.setRight(max(0, 16 - bar) if maximum else 16)
-        self.backup_panel.layout().setContentsMargins(margins)
+        if margins != self.backup_panel.layout().contentsMargins():
+            self.backup_panel.layout().setContentsMargins(margins)
+            self.backup_panel.layout().activate()  # now, not a frame later
 
     def _on_workspace_changed(self, index):
         if index == 1 and self.archive_combo.count() and not self._repo_op_running:

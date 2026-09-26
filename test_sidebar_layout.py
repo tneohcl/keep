@@ -13,6 +13,7 @@ _STATE = tempfile.TemporaryDirectory()
 os.environ["KEEP_CONFIG_PATH"] = str(Path(_STATE.name) / "config.json")
 os.environ["XDG_STATE_HOME"] = str(Path(_STATE.name) / "state")
 
+from PySide6.QtGui import QFont  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFrame, QVBoxLayout, QWidget  # noqa: E402
 
 APP = QApplication.instance() or QApplication([])
@@ -91,7 +92,22 @@ class EmptyRestoreSidebar(unittest.TestCase):
 class ShortStatusSidebar(unittest.TestCase):
     """Large text or a short screen: the rows keep their full height, wrapped
     values included, and the sidebar scrolls. Regression: the rows were
-    squeezed and the second line of Recovery access was clipped."""
+    squeezed and the second line of Recovery access was clipped; then, at
+    14 pt on Windows, a long host name widened the cards past the column."""
+
+    POINTS = 0  # the platform's default font size
+
+    @classmethod
+    def setUpClass(cls):
+        cls._font = QFont(APP.font())
+        if cls.POINTS:
+            font = APP.font()
+            font.setPointSize(cls.POINTS)
+            APP.setFont(font)
+
+    @classmethod
+    def tearDownClass(cls):
+        APP.setFont(cls._font)
 
     def setUp(self):
         with patch.object(main.MainWindow, "refresh_status", lambda self: None):
@@ -136,17 +152,31 @@ class ShortStatusSidebar(unittest.TestCase):
         self.assertGreaterEqual(bar.mapTo(self.window, bar.rect().topLeft()).x(), span(card, self.window)[1])
 
     def test_margin_returns_when_the_window_grows(self):
-        self.window.resize(1000, 1600)
+        bar = self.window.status_sidebar.verticalScrollBar()
+        self.window.resize(1000, self.window.height() + bar.maximum() + 100)  # room for all of it
         APP.processEvents()
         card = self.window.backup_panel.findChild(QFrame, "odcsSettingsList")
         self.assertFalse(self.window.status_sidebar.verticalScrollBar().isVisible())
         self.assertEqual(self.window.backup_panel.layout().contentsMargins().right(), 16)
         self.assertEqual(span(card, self.window), span(self.window.view_switch, self.window))
 
+    def test_no_empty_space_below_the_last_row(self):
+        panel = self.window.backup_panel
+        self.assertLessEqual(panel.height(), max(panel.heightForWidth(panel.width()),
+                                                 self.window.status_sidebar.viewport().height()))
+
     def test_no_sideways_scrolling(self):
         scroll = self.window.status_sidebar
         self.assertFalse(scroll.horizontalScrollBar().isVisible())
         self.assertLessEqual(self.window.backup_panel.width(), scroll.viewport().width())
+
+
+class ShortStatusSidebarAt14pt(ShortStatusSidebar):
+    POINTS = 14
+
+
+class ShortStatusSidebarAt22pt(ShortStatusSidebar):
+    POINTS = 22
 
 
 if __name__ == "__main__":

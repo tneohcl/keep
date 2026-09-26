@@ -420,9 +420,17 @@ with tempfile.TemporaryDirectory() as directory:
     window.lbl_last.setText("Today, 09:30")
     window.lbl_next.setText("Tomorrow, 04:00")
     window.lbl_dest_status.setText("External backup drive")
+    # refresh_status is mocked, so fill the sidebar as it would: the real
+    # Recovery access summary, and a destination long enough to wrap.
+    window.recovery_access_row.setValue(*main.recovery_access.summary(None))
+    window.destination_choice.setValue("NAS share · Synology-DS920plus-Living-Room · /volume1/backups")
     window.resize(1000, 800)
     window.show()
     app.processEvents()
+    for row in window.backup_panel.plan_panel.rows + window.backup_panel.recovery_panel.rows:
+        assert row.height() >= row.heightForWidth(row.width()), row.label()
+    assert window.recovery_access_row.value() == "Not yet tested"
+    assert window.backup_panel.width() <= window.status_sidebar.viewport().width()
     assert window.grab().save(str(output / "large-text.png"))
     import applications
     app_home = Path(directory) / "app-home"
