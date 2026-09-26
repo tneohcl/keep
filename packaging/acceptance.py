@@ -118,6 +118,9 @@ class Sandbox:
         return [a["name"] for a in json.loads(listing.stdout)["archives"]] if listing.returncode == 0 else None
 
     def cleanup(self):
+        keep_logs = os.environ.get("KEEP_ACCEPTANCE_LOGS")   # a folder to copy the run logs to
+        if keep_logs and self.logs.is_dir():
+            shutil.copytree(self.logs, keep_logs, dirs_exist_ok=True)
         # Unmount the scenario mounts first (deepest first), or the folders
         # under them can't be removed.
         mounts = [line.split()[1] for line in Path("/proc/self/mounts").read_text().splitlines()
@@ -149,17 +152,28 @@ def init_repo(box, repo):
     check("throwaway repository created", rc == 0)
 
 
-def strike_after_create_starts(box, process, action, min_bytes, watch):
-    """Wait until borg create is running and has written data, then act."""
+def strike_after_create_starts(box, process, action, min_bytes, watch, timeout=120):
+    """Wait until borg create is running and has written at least min_bytes
+    to the destination, then act, and return True. If that never happens (the
+    run ended, or stalled until the deadline), don't act: stop and reap a
+    still-running process group and return False, so the scenario isn't
+    counted as a mid-write interruption."""
     started = box.wait_for("running borg create", process)
     baseline = du(watch)
-    deadline = time.time() + 120
-    while started and process.poll() is None and time.time() < deadline and du(watch) - baseline < min_bytes:
+    deadline = time.monotonic() + timeout
+    written = 0
+    while started and process.poll() is None and time.monotonic() < deadline:
+        written = du(watch) - baseline
+        if written >= min_bytes:
+            break
         time.sleep(0.05)
-    running = process.poll() is None
-    if running:
+    if started and written >= min_bytes and process.poll() is None:
         action()
-    return started and running
+        return True
+    if process.poll() is None:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=60)
+    return False
 
 
 def du(path):
@@ -222,6 +236,11 @@ def scenario_disappears(box):
     rc = process.wait(timeout=900)
     log = box.newest_log()
     check("destination removed while borg create was writing", struck)
+    if not struck:
+        if not os.path.ismount(mountpoint):
+            connect(store, mountpoint)
+        (box.source / "big-2.bin").unlink()
+        return
     check("the interrupted run fails (non-zero exit)", rc != 0, f"rc={rc}")
     check("the interrupted run is never reported as a success", "backup completed" not in log)
     show_error(log)
@@ -247,6 +266,9 @@ def scenario_crash(box):
     process.wait(timeout=60)
     log = box.newest_log()
     check("keep_backup and borg killed while borg create was writing", struck)
+    if not struck:
+        (box.source / "big-3.bin").unlink()
+        return
     check("the killed run is never reported as a success", "backup completed" not in log)
     show_error(log)
     check("Borg's lock was left behind by the crash", any(repo.glob("lock*")))
