@@ -346,7 +346,8 @@ def is_native_process_running(process_names):
     "is any app on this machine running" scan."""
     for name in process_names:
         try:
-            out = subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=5)
+            # The host's processes: inside a Flatpak, pgrep sees only the sandbox's.
+            out = subprocess.run(host.command(["pgrep", "-x", name]), capture_output=True, timeout=5)
             if out.returncode == 0:
                 return True
         except Exception:

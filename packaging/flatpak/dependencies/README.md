@@ -9,4 +9,8 @@ the same Borg 1.4.5 stack for a Qt app on the KDE runtime:
   `flatpak-spawn --host`, forwarding the FUSE file descriptor, so archives
   can be mounted for browsing
 
+Keep's one change: the wrappers pass `--directory=/` to `flatpak-spawn`, which otherwise runs
+the host command in the caller's working directory and fails when that exists only in the
+sandbox (for example `/app/share/keep`).
+
 Update them from there when Borg or libfuse is updated.

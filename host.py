@@ -2,8 +2,9 @@
 
 A few programs Keep runs belong to the host session, not the sandbox:
 systemctl (the user timer), flatpak (installed apps), findmnt (the host's
-mounts and drive UUIDs) and fusermount (archives are mounted by the host's
-fusermount, see packaging/flatpak). Inside a Flatpak, command() runs them
+mounts and drive UUIDs), fusermount (archives are mounted by the host's
+fusermount, see packaging/flatpak) and pgrep (is an app running, before its
+data is restored over the live copy). Inside a Flatpak, command() runs them
 through flatpak-spawn --host; anywhere else it leaves them unchanged.
 """
 import os
@@ -28,7 +29,9 @@ def flatpak_id():
 
 def command(args):
     """argv for a host tool: through flatpak-spawn --host inside a Flatpak."""
-    return ["flatpak-spawn", "--host", *args] if flatpak_id() else list(args)
+    # --directory=/: otherwise the host runs it in our working directory,
+    # which may exist only in the sandbox (/app/...), and refuses to start it.
+    return ["flatpak-spawn", "--host", "--directory=/", *args] if flatpak_id() else list(args)
 
 
 def shared_path(name):
