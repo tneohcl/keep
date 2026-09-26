@@ -75,6 +75,42 @@ class HostAppsFromInsideTheFlatpak(unittest.TestCase):
         self.assertEqual(applications.display_name("org.mozilla.firefox", self.home), "Firefox Web Browser")
 
 
+class AppIcons(unittest.TestCase):
+    """Reported: in the Flatpak the chooser showed generic icons. Other
+    Flatpaks export their icons to .../flatpak/exports/share/icons, which the
+    sandbox's icon search path leaves out."""
+
+    def test_flatpak_icon_exports_are_searched_inside_the_flatpak(self):
+        home = Path("/home/me")
+        with patch.object(host, "flatpak_id", return_value=APP_ID), \
+                patch.object(host, "SYSTEM_FLATPAK", "/var/lib/flatpak"):
+            self.assertEqual(host.icon_dirs(home), [home / ".local/share/flatpak/exports/share/icons",
+                                                    Path("/var/lib/flatpak/exports/share/icons")])
+        with patch.object(host, "flatpak_id", return_value=None):
+            self.assertEqual(host.icon_dirs(home), [])      # the host's own search path has them
+
+    def test_keep_adds_them_to_qts_search_path_once(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtGui import QIcon
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        import main
+        extra = tempfile.mkdtemp()
+        before = QIcon.themeSearchPaths()
+        self.addCleanup(QIcon.setThemeSearchPaths, before)
+        with patch.object(host, "icon_dirs", return_value=[Path(extra)]):
+            main.extend_icon_search_paths()
+            main.extend_icon_search_paths()
+        self.assertEqual(QIcon.themeSearchPaths().count(extra), 1)
+
+    def test_data_folder_entries_try_the_folder_name_as_their_icon(self):
+        # path:.local/share/dolphin looked up an icon named "path:.local/share/dolphin".
+        entry = {"id": "path:.local/share/dolphin", "paths": [".local/share/dolphin"]}
+        self.assertIn("dolphin", applications.icon_names(entry))
+        flatpak = {"id": "path:.var/app/org.mozilla.firefox", "paths": [".var/app/org.mozilla.firefox"]}
+        self.assertEqual(applications.icon_names(flatpak)[0], "org.mozilla.firefox")
+
+
 class OutsideTheFlatpakUnchanged(unittest.TestCase):
     def test_paths_and_lookups_are_the_host_itself(self):
         with patch.object(host, "flatpak_id", return_value=None):
