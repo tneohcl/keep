@@ -2916,9 +2916,17 @@ class MainWindow(QWidget):
         self.backup_list_panel = BackupListPanel()
         self.backup_list_panel.chosen.connect(self.archive_combo.setCurrentIndex)
         self.archive_combo.currentIndexChanged.connect(self._on_archive_selection_shown)
+        # Large text or a short screen: the Status sidebar scrolls rather than
+        # squeeze its rows (the Restore sidebar's list scrolls by itself).
+        self.status_sidebar = QScrollArea()
+        self.status_sidebar.setObjectName("keepStatusScroll")
+        self.status_sidebar.setWidgetResizable(True)
+        self.status_sidebar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.status_sidebar.setWidget(self.backup_panel)
+        self.status_sidebar.verticalScrollBar().rangeChanged.connect(self._fit_status_sidebar)
         self.sidebar_stack = QStackedWidget()
         self.sidebar_stack.setFixedWidth(300)
-        self.sidebar_stack.addWidget(self.backup_panel)
+        self.sidebar_stack.addWidget(self.status_sidebar)
         self.sidebar_stack.addWidget(self.backup_list_panel)
         self.pages.currentChanged.connect(self.sidebar_stack.setCurrentIndex)
         # The view switch heads the sidebar with the panels' own side margins
@@ -4585,6 +4593,16 @@ class MainWindow(QWidget):
             candidate = None
             dlg.show_error("That passphrase didn't work - check for typos and try again.")
         return False
+
+    def _fit_status_sidebar(self, _minimum=0, maximum=0):
+        # A scroll bar takes its width out of the panel's right margin, so the
+        # cards keep the view switch's width and nothing rewraps.
+        margins = self.backup_panel.layout().contentsMargins()
+        bar = self.status_sidebar.verticalScrollBar().sizeHint().width()
+        margins.setRight(max(0, 16 - bar) if maximum else 16)
+        if margins != self.backup_panel.layout().contentsMargins():
+            self.backup_panel.layout().setContentsMargins(margins)
+            self.backup_panel.layout().activate()  # now, not a frame later
 
     def _on_workspace_changed(self, index):
         if index == 1 and self.archive_combo.count() and not self._repo_op_running:
