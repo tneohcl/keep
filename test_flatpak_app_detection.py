@@ -70,6 +70,22 @@ class HostAppsFromInsideTheFlatpak(unittest.TestCase):
         desktop(self.host_root / "usr/share/applications/keepprobeapp.desktop", "Keep Probe App", "keepprobeapp %u")
         self.assertTrue(applications.InstalledApps(self.home).contains("keepprobeapp"))
 
+    def test_links_through_etc_alternatives_resolve_on_the_host(self):
+        # Review of #9: /usr/bin/X -> /etc/alternatives/X -> /usr/lib/X/X.
+        # host-os shows the host's /etc/alternatives under /run/host too.
+        real = self.host_root / "usr/lib/keepaltprobe/keepaltprobe"
+        real.parent.mkdir(parents=True)
+        real.write_text("#!/bin/sh\n")
+        real.chmod(0o755)
+        (self.host_root / "etc/alternatives").mkdir(parents=True)
+        (self.host_root / "etc/alternatives/keepaltprobe").symlink_to("/usr/lib/keepaltprobe/keepaltprobe")
+        (self.host_root / "usr/bin/keepaltprobe").symlink_to("/etc/alternatives/keepaltprobe")
+        desktop(self.host_root / "usr/share/applications/keepaltprobe.desktop", "Keep Alt Probe", "keepaltprobe")
+        self.assertFalse(os.path.exists("/etc/alternatives/keepaltprobe"))   # the host can't make it pass
+        self.assertTrue(applications.InstalledApps(self.home).contains("keepaltprobe"))
+        self.assertEqual(host.system_path("/etc/alternatives/x"), f"{self.host_root}/etc/alternatives/x")
+        self.assertEqual(host.system_path("/etc/passwd"), "/etc/passwd")      # only that subtree
+
     def test_flatpak_names_come_from_the_system_exports(self):
         # A distinctive name: display_name otherwise falls back to guessing from the ID.
         self.assertEqual(applications.display_name("org.mozilla.firefox", self.home), "Firefox Web Browser")
