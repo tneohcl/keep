@@ -78,8 +78,8 @@ The hidden Status/Restore buttons, hidden icon/list toggle buttons, hidden Refre
 Portable:
 
 ```sh
-python -m unittest -q test_applications test_release_safety test_theming test_mount_service test_app_logging test_restore_copy test_backup_locking
-python test_gui_smoke.py
+python -m unittest -q tests.test_applications tests.test_release_safety tests.test_theming tests.test_mount_service tests.test_app_logging tests.test_restore_copy tests.test_backup_locking
+python -m tests.test_gui_smoke
 ```
 
 Failure-scenario acceptance (Linux, unprivileged; needs `unshare`, `borg` and a PySide6 Python):
@@ -105,7 +105,7 @@ docker run --rm keep-validation bash packaging/test-package.sh
 
 The package probe runs outside the checkout and imports `/usr/lib/keep/main.py`, so source files cannot hide packaging omissions. The test image contains all dependencies; no user repository or credentials are mounted into it. Shell scripts must retain LF endings. The legacy recovery harness uses throwaway encrypted repositories; current visual behavior is covered by `test_gui_smoke.py` and `test_theming.py`, replacing assertions about deleted controls/delegates.
 
-`test_restore_copy.py` exercises real nested broken links, links to Unix sockets, directory links and unsuppressed copy errors; those filesystem checks run on Linux and skip on Windows. GUI smoke checks cover full-cell selection, stable hover geometry, bulk selection, catalog grouping, bounded result dialogs and both themes. Native desktop interaction and accessibility still need real-machine acceptance.
+`tests/test_restore_copy.py` exercises real nested broken links, links to Unix sockets, directory links and unsuppressed copy errors; those filesystem checks run on Linux and skip on Windows. GUI smoke checks cover full-cell selection, stable hover geometry, bulk selection, catalog grouping, bounded result dialogs and both themes. Native desktop interaction and accessibility still need real-machine acceptance.
 
 The package allowlist includes Python modules, `keep_ui/*.py`, QSS and SVG assets, including `check.svg` and `chevron-down.svg`. Add required assets to packaging when introducing them. Refresh `dist/SHA256SUMS` after rebuilding a distributable package. A successful old validation log is not evidence for subsequently changed behavior.
 

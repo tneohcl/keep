@@ -392,7 +392,7 @@ with tempfile.TemporaryDirectory() as directory:
         window.archive_combo.blockSignals(True)
         window.archive_combo.clear()
         window.archive_combo.blockSignals(False)
-    output = Path(__file__).parent / "ui-review"
+    output = Path(__file__).resolve().parent.parent / "ui-review"
     output.mkdir(exist_ok=True)
     for dark in (False, True):
         palette = app.style().standardPalette()

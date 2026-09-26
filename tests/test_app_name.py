@@ -21,7 +21,7 @@ APP = QApplication.instance() or QApplication([])
 import main  # noqa: E402
 import version  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 NAME = "Keep Backup"
 
 

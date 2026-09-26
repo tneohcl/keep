@@ -5,7 +5,7 @@ from pathlib import Path
 import theming  # noqa: F401  (puts vendor/ on sys.path)
 import odcs_ui
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
 class VendoredOdcsUi(unittest.TestCase):

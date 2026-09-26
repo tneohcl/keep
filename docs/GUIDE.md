@@ -168,11 +168,11 @@ Neither dialog ever shows a passphrase or reconstructed key back to you once it'
 
 Keep uses `style.qss` for shared surfaces, tabs, fields, buttons and item views, `themes.py` for light/dark color tokens, and `theming.py` for loading and live Qt palette updates. The system accent is read from Qt; primary-action text chooses black or white for contrast. Widget roles (`primary`, `secondary`, `error`) replace local color overrides. Keep geometry shared across palettes and add reusable rules here when introducing controls.
 
-Portable verification: `python -m unittest -q test_applications test_release_safety test_theming test_mount_service` and `python test_gui_smoke.py`. Screenshots use synthetic data and do not verify real Borg operations.
+Portable verification: `python -m unittest -q tests.test_applications tests.test_release_safety tests.test_theming tests.test_mount_service` and `python -m tests.test_gui_smoke` (from the repository root; `packaging/test-linux.sh` runs everything). Screenshots use synthetic data and do not verify real Borg operations.
 
 ## Maintenance and release checks
 
-See [ARCHITECTURE.md](../ARCHITECTURE.md) for module boundaries, extension rules and the full Linux/Borg/package validation commands.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for module boundaries, extension rules and the full Linux/Borg/package validation commands.
 
 ## Application session logs
 
@@ -180,7 +180,7 @@ Every launch writes a private session log under `$XDG_STATE_HOME/keep/logs` (nor
 
 ## Command-line interface (0.9.2)
 
-See [CLI.md](../CLI.md). From the complete updated source checkout:
+See [CLI.md](CLI.md). From the complete updated source checkout:
 
 ```sh
 python3 cli.py status
