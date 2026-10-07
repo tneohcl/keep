@@ -16,9 +16,9 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-import consumer  # noqa: E402
-import main  # noqa: E402
-from operation_lock import RepositoryLock  # noqa: E402
+from keep_backup.core import consumer  # noqa: E402
+from keep_backup.ui import main_window  # noqa: E402
+from keep_backup.core.operation_lock import RepositoryLock  # noqa: E402
 
 REPO = "/mnt/nas/backups/repo"
 
@@ -96,7 +96,7 @@ class BorgFailureReason(unittest.TestCase):
 class StatusPageReason(unittest.TestCase):
     def setUp(self):
         self.logdir = Path(tempfile.mkdtemp())
-        patcher = patch.object(main, "LOGDIR", str(self.logdir))
+        patcher = patch.object(main_window, "LOGDIR", str(self.logdir))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -111,24 +111,24 @@ class StatusPageReason(unittest.TestCase):
     def test_the_logged_reason_is_shown(self):
         self.log("ERROR borg create failed (rc=2)", "Reason: The backup destination is full.",
                  "Keep backup finished with exit code 3")
-        self.assertEqual(main.backup_failure_reason(REPO, None), "The backup destination is full.")
+        self.assertEqual(main_window.backup_failure_reason(REPO, None), "The backup destination is full.")
 
     def test_no_reason_for_a_finished_backup(self):
         self.log("backup completed successfully", "Keep backup finished with exit code 0", age=3600)
-        self.assertIsNone(main.backup_failure_reason(REPO, None))
+        self.assertIsNone(main_window.backup_failure_reason(REPO, None))
 
     def test_a_run_that_stopped_writing_and_holds_no_lock_was_interrupted(self):
         self.log("running borg create", age=600)
-        self.assertIn("stopped before finishing", main.backup_failure_reason(REPO, None))
+        self.assertIn("stopped before finishing", main_window.backup_failure_reason(REPO, None))
 
     def test_a_run_still_writing_is_not_called_interrupted(self):
         self.log("running borg create")
-        self.assertIsNone(main.backup_failure_reason(REPO, None))
+        self.assertIsNone(main_window.backup_failure_reason(REPO, None))
 
     def test_a_run_holding_the_repository_lock_is_not_called_interrupted(self):
         self.log("running borg create", age=600)
         with RepositoryLock(REPO):
-            self.assertIsNone(main.backup_failure_reason(REPO, None))
+            self.assertIsNone(main_window.backup_failure_reason(REPO, None))
 
 
 if __name__ == "__main__":

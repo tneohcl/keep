@@ -4,7 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import unittest
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QPushButton
-import theming
+from keep_backup.ui import theming
 
 class ThemeTests(unittest.TestCase):
     @classmethod
@@ -14,7 +14,7 @@ class ThemeTests(unittest.TestCase):
     def test_text_tokens_meet_wcag_aa(self):
         # 2026-09-25 UI audit: every readable TEXT_* token >= 4.5:1 on the
         # surfaces text actually sits on (TEXT_DISABLED is WCAG-exempt).
-        import themes
+        from keep_backup.ui import themes
         def ratio(a, b):
             la, lb = theming.luminance(QColor(a)), theming.luminance(QColor(b))
             return (max(la, lb) + .05) / (min(la, lb) + .05)
@@ -79,7 +79,7 @@ class ThemeTests(unittest.TestCase):
         script = """
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QWidget
-import theming
+from keep_backup.ui import theming
 app = QApplication([])
 class Probe(QWidget):
     def changeEvent(self, event):

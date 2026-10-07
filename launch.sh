@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
+ROOT="$PWD"
 
 # Keep source/preview launcher.
 # Prefer an already-working interpreter, but make a self-contained local
@@ -11,10 +12,18 @@ has_pyside6() {
     [ -x "$py" ] && "$py" -c 'import PySide6' >/dev/null 2>&1
 }
 
+# Runs the package from this checkout's src/, and from inside src/: at the
+# root, "keep_backup" would mean the keep_backup.py launcher (kept there for
+# older timer units), not the package. Keep doesn't depend on its working folder.
+start() {
+    cd "$ROOT/src"
+    exec "$1" -m keep_backup
+}
+
 try_exec() {
     local py="$1"
     if has_pyside6 "$py"; then
-        exec "$py" main.py
+        start "$py"
     fi
 }
 
@@ -76,7 +85,9 @@ MSG
     exit 1
 fi
 
-if ! .venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt; then
+# An editable install: Keep's dependencies from pyproject.toml, with the
+# package itself still running from this checkout.
+if ! .venv/bin/python -m pip install --disable-pip-version-check --editable .; then
     cat >&2 <<'MSG'
 
 Keep could not install its GUI dependency (PySide6).
@@ -91,4 +102,4 @@ if ! has_pyside6 "$PWD/.venv/bin/python"; then
     exit 1
 fi
 
-exec "$PWD/.venv/bin/python" main.py
+start "$ROOT/.venv/bin/python"

@@ -1,10 +1,12 @@
 """Host tools, the shared mount path and the timer command inside a Flatpak."""
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-import consumer
-import host
+from keep_backup.core import consumer
+from keep_backup.core import host
 
 APP_ID = "io.github.tneohcl.Keep"
 
@@ -20,9 +22,16 @@ class OutsideFlatpak(unittest.TestCase):
         self.assertEqual(host.shared_path("borg-keep-mount"), "/tmp/borg-keep-mount")
         self.assertIsNone(host.backup_command("/home/me/.config/keep/config.json"))
 
-    def test_timer_runs_keep_backup_directly(self):
+    def test_timer_runs_the_installed_engine_directly(self):
         cmd = consumer.backup_command({"backup_engine": "builtin"}, "/c.json", "/opt/keep", "/usr/bin/python3")
-        self.assertEqual(cmd, ["/usr/bin/python3", os.path.join("/opt/keep", "keep_backup.py"), "--config", "/c.json"])
+        self.assertEqual(cmd, ["/usr/bin/python3", "-m", "keep_backup.engine", "--config", "/c.json"])
+
+    def test_source_checkout_runs_its_root_launcher(self):
+        # The path older timer units already use; the launcher finds src/.
+        with tempfile.TemporaryDirectory() as checkout:
+            Path(checkout, "keep_backup.py").write_text("")
+            cmd = consumer.backup_command({"backup_engine": "builtin"}, "/c.json", checkout, "/usr/bin/python3")
+        self.assertEqual(cmd, ["/usr/bin/python3", os.path.join(checkout, "keep_backup.py"), "--config", "/c.json"])
 
 
 class InsideFlatpak(unittest.TestCase):
@@ -45,8 +54,8 @@ class InsideFlatpak(unittest.TestCase):
     def test_back_up_now_runs_the_bundled_engine(self):
         # Review of #8: the GUI's "Back up now" shares backup_command with the
         # timer, and must not get the host-only `flatpak run` command.
-        cmd = consumer.backup_command({"backup_engine": "builtin"}, "/c.json", "/app/share/keep", "/usr/bin/python3")
-        self.assertEqual(cmd, ["/usr/bin/python3", os.path.join("/app/share/keep", "keep_backup.py"), "--config", "/c.json"])
+        cmd = consumer.backup_command({"backup_engine": "builtin"}, "/c.json", "/app/lib/keep_backup", "/usr/bin/python3")
+        self.assertEqual(cmd, ["/usr/bin/python3", "-m", "keep_backup.engine", "--config", "/c.json"])
 
     def test_timer_runs_the_flatpak(self):
         config = {"backup_engine": "builtin", "schedule": {"time": "04:00"}}

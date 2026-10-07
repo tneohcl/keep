@@ -5,8 +5,8 @@ import os
 import tempfile
 from pathlib import Path
 
-import consumer
-import keep_backup
+from keep_backup.core import consumer
+from keep_backup import engine
 
 
 def check(name, cond):
@@ -39,7 +39,7 @@ check("daily OnCalendar is correct", consumer.on_calendar({"frequency": "daily",
 check("weekly OnCalendar is correct", consumer.on_calendar({"frequency": "weekly", "weekday": "Tuesday", "time": "21:05"}) == "Tue *-*-* 21:05:00")
 
 service, timer = consumer.render_systemd_units(fresh, "/tmp/config.json", "/opt/keep", "/usr/bin/python3")
-check("bundled systemd service calls keep_backup.py", 'keep_backup.py' in service and '--config' in service)
+check("bundled systemd service runs the engine", 'keep_backup.engine' in service and '--config' in service)
 check("systemd timer contains requested calendar", "OnCalendar=*-*-* 04:00:00" in timer)
 
 external = copy.deepcopy(fresh)
@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory() as td:
         "schedule": {"enabled": False, "frequency": "daily", "time": "04:00", "weekday": "Monday", "timer_unit": "keep-backup.timer", "managed_by_keep": True},
         "curated_items": [], "cross_install_apps": {}, "extra_flatpak_paths": {}, "native_process_names": {},
     }
-    got = keep_backup.collect_sources(cfg)
+    got = engine.collect_sources(cfg)
     check("bundled engine consumes configured folder source", got == [str(docs)])
 
 
@@ -89,7 +89,7 @@ app_paths = consumer.app_data_sources({"curated_items": [], "extra_flatpak_paths
 check("native XDG config is included as app data", "/home/alice/.config" in app_paths)
 check("Flatpak sandboxes are included as app data", "/home/alice/.var/app" in app_paths)
 
-base_args = keep_backup._borg_base_args({"excludes_file": "/definitely/not/present"})
+base_args = engine._borg_base_args({"excludes_file": "/definitely/not/present"})
 joined = " ".join(base_args)
 check("entire Borg client state is hard-excluded from Keep-managed backups", ".config/borg" in joined and ".cache/borg" in joined)
 check("Keep restore output is hard-excluded from whole-home backups", "Keep-Restored" in joined)
@@ -183,7 +183,7 @@ raise SystemExit(9)
         os.environ.pop("FAKE_BORG_CREATE_WARN", None)
         os.environ.pop("FAKE_BORG_BAD_PRESCAN_PATH", None)
 
-        rc = keep_backup.run(str(cfg_path))
+        rc = engine.run(str(cfg_path))
         logs = list(logdir.glob("backup-*.log"))
         check("built-in backup creates exactly one authoritative run log", rc == 0 and len(logs) == 1)
         text = logs[0].read_text()
@@ -202,7 +202,7 @@ raise SystemExit(9)
         # Keep must continue retention/compact and return success to the GUI
         # while leaving an explicit warning verdict in the authoritative log.
         os.environ["FAKE_BORG_CREATE_WARN"] = "1"
-        rc = keep_backup.run(str(cfg_path))
+        rc = engine.run(str(cfg_path))
         logs = sorted(logdir.glob("backup-*.log"), key=lambda p: p.stat().st_mtime_ns)
         text = logs[-1].read_text()
         check("Borg warning rc does not falsely fail a completed backup", rc == 0 and "borg create exited with rc=1" in text and "backup completed with warnings" in text and "FAKE PRUNE OUTPUT" in text and "FAKE COMPACT OUTPUT" in text)
@@ -211,7 +211,7 @@ raise SystemExit(9)
         # If Borg's path rendering cannot be mapped back to the filesystem,
         # Keep must not regress to a bogus 0-byte progress estimate.
         os.environ["FAKE_BORG_BAD_PRESCAN_PATH"] = "1"
-        rc = keep_backup.run(str(cfg_path))
+        rc = engine.run(str(cfg_path))
         logs = sorted(logdir.glob("backup-*.log"), key=lambda p: p.stat().st_mtime_ns)
         text = logs[-1].read_text()
         check("unresolvable Borg prescan paths fall back to local size estimate", rc == 0 and "prescan fallback counted 1 regular files" in text and "prescan complete: 5 bytes to back up" in text)
@@ -220,7 +220,7 @@ raise SystemExit(9)
         # New run with an authentication failure. It must fail before prescan
         # and retain Borg's actual stderr in the same per-run log.
         os.environ["FAKE_BORG_AUTH_FAIL"] = "1"
-        rc = keep_backup.run(str(cfg_path))
+        rc = engine.run(str(cfg_path))
         logs = sorted(logdir.glob("backup-*.log"), key=lambda p: p.stat().st_mtime_ns)
         # Runs can start within the same wall-clock second. If the filename
         # collided, the later run is still authoritative but there will be one

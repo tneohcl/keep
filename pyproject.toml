@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keep-backup"
+dynamic = ["version"]
+description = "Linux desktop backup and recovery with BorgBackup"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "ODCS App Studio" }]
+requires-python = ">=3.10"
+# BorgBackup (1.x) and FUSE come from the system, not from PyPI.
+dependencies = ["PySide6>=6.6,<7"]
+
+[project.urls]
+Homepage = "https://github.com/tneohcl/keep"
+
+# The command names are a contract: menu entries and timer units run them.
+[project.gui-scripts]
+keep = "keep_backup.ui.main_window:main"
+
+[project.scripts]
+keep-cli = "keep_backup.cli:main"
+keep-backup = "keep_backup.engine:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "keep_backup.VERSION" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"keep_backup.ui" = ["assets/*"]
+"keep_backup.ui._vendor" = ["ODCS_UI_VERSION"]
+"keep_backup.ui._vendor.odcs_ui" = ["*.json", "*.qss", "LICENSE"]

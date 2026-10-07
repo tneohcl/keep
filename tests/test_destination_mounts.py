@@ -2,7 +2,7 @@ import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-import destination
+from keep_backup.core import destination
 
 
 class MountParsingTests(unittest.TestCase):

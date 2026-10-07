@@ -12,7 +12,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-import keep_backup
+from keep_backup import engine
 
 
 @unittest.skipUnless(sys.platform == "linux" and shutil.which("borg"), "Requires Linux and Borg")
@@ -47,22 +47,22 @@ class BackupLockingTests(unittest.TestCase):
         timer = threading.Timer(2, self.release)
         timer.start()
         try:
-            with patch.object(keep_backup, "REPOSITORY_LOCK_WAIT_SECONDS", 8):
-                self.assertTrue(keep_backup._check_repo_access(self.repo, self.env, io.StringIO()))
+            with patch.object(engine, "REPOSITORY_LOCK_WAIT_SECONDS", 8):
+                self.assertTrue(engine._check_repo_access(self.repo, self.env, io.StringIO()))
         finally:
             timer.join()
 
     def test_preflight_reports_exhausted_wait(self):
         log = io.StringIO()
-        with patch.object(keep_backup, "REPOSITORY_LOCK_WAIT_SECONDS", 1):
-            self.assertFalse(keep_backup._check_repo_access(self.repo, self.env, log))
+        with patch.object(engine, "REPOSITORY_LOCK_WAIT_SECONDS", 1):
+            self.assertFalse(engine._check_repo_access(self.repo, self.env, log))
         self.assertIn("wait up to 1 seconds", log.getvalue())
         self.assertIn("access check failed", log.getvalue())
         self.assertIsNone(self.holder.poll(), "Active lock holder must not be killed")
 
     def test_waiting_process_group_can_be_cancelled(self):
-        script = ("import io,os,sys,keep_backup; "
-                  "keep_backup._check_repo_access(sys.argv[1],dict(os.environ),sys.stdout)")
+        script = ("import io,os,sys; from keep_backup import engine; "
+                  "engine._check_repo_access(sys.argv[1],dict(os.environ),sys.stdout)")
         waiter = subprocess.Popen([sys.executable, "-u", "-c", script, self.repo], env=self.env,
                                   start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
@@ -76,7 +76,7 @@ class BackupLockingTests(unittest.TestCase):
                 os.killpg(waiter.pid, signal.SIGKILL)
                 waiter.wait(timeout=10)
         self.release()
-        self.assertTrue(keep_backup._check_repo_access(self.repo, self.env, io.StringIO()))
+        self.assertTrue(engine._check_repo_access(self.repo, self.env, io.StringIO()))
 
 
 if __name__ == "__main__":

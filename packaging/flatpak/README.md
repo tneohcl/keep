@@ -25,7 +25,7 @@ lightly sandboxed:
   `/run/host` and system Flatpaks under `/var/lib/flatpak` (`host.system_path`, `host.which`,
   `host.data_dirs`). Without them the app chooser saw only per-user Flatpaks.
 - `--device=all` for `/dev/fuse` (browsing a backup mounts it with `borg mount`).
-- `--talk-name=org.freedesktop.Flatpak`, so `host.py` can run `systemctl --user`
+- `--talk-name=org.freedesktop.Flatpak`, so `core/host.py` can run `systemctl --user`
   (the schedule), `flatpak` (installed apps), `findmnt` (drives) and `fusermount`
   on the host. Archives are mounted by the host's `fusermount3` via
   `dependencies/fusermount-wrapper.sh`, at `$XDG_RUNTIME_DIR/app/io.github.tneohcl.Keep/`,

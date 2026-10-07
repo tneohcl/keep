@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import consumer
-import keep_backup
-import destination
+from keep_backup.core import consumer
+from keep_backup import engine
+from keep_backup.core import destination
 
 
 class ReleaseSafetyTests(unittest.TestCase):
@@ -49,10 +49,10 @@ class ReleaseSafetyTests(unittest.TestCase):
             config["backup_sources"] = [{"path": str(root / "missing")}]
             path = root / "config.json"
             consumer.write_config(path, config)
-            with patch("keep_backup.shutil.which", return_value="borg"), patch("keep_backup._check_repo_access") as access:
+            with patch("keep_backup.engine.shutil.which", return_value="borg"), patch("keep_backup.engine._check_repo_access") as access:
                 import io
                 log = io.StringIO()
-                self.assertEqual(keep_backup._run_with_log(str(path), log), 2)
+                self.assertEqual(engine._run_with_log(str(path), log), 2)
                 access.assert_not_called()
                 self.assertIn("selected backup source(s) unavailable", log.getvalue())
 
@@ -94,37 +94,29 @@ class ReleaseSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             mount = Path(directory) / "drive"
             mount.mkdir()
-            with patch("destination._findmnt_target_for_uuid", return_value=str(mount)):
+            with patch("keep_backup.core.destination._findmnt_target_for_uuid", return_value=str(mount)):
                 result = destination.resolve_destination({"type": "removable", "uuid": "test", "repo_subpath": "../elsewhere"})
             self.assertFalse(result["available"])
             self.assertIn("escapes", result["reason"])
 
     def test_custom_borg_key_material_is_excluded(self):
         with patch.dict(os.environ, {"BORG_KEYS_DIR": "/private/keys", "BORG_KEY_FILE": "/private/key"}):
-            protected = keep_backup._protected_paths()
+            protected = engine._protected_paths()
             self.assertIn("/private/keys", protected)
             self.assertIn("/private/key", protected)
 
 
 
 class DebianPackageContents(unittest.TestCase):
-    def test_every_module_the_package_imports_is_installed(self):
-        # Review of #8: host.py was imported by main/cli/consumer but not
-        # installed by build-deb.sh, so the packaged app, CLI and scheduled
-        # engine failed to start.
+    def test_the_whole_package_is_installed(self):
+        # Review of #8: build-deb.sh used to list modules by hand and missed
+        # host.py, so the packaged app, CLI and scheduled engine failed to
+        # start. It now copies the whole package, so no module can be left out.
         import re
-        root = Path(__file__).resolve().parent.parent
-        script = (root / "packaging" / "build-deb.sh").read_text()
-        installed = set(re.findall(r"\b(\w+)\.py\b", script.split('"$stage/usr/lib/keep/"')[0]))
-        local = {p.stem for p in root.glob("*.py") if not p.stem.startswith("test_")}
-        packaged = [root / f"{name}.py" for name in installed if (root / f"{name}.py").exists()]
-        packaged += sorted((root / "keep_ui").glob("*.py"))
-        missing = set()
-        for source in packaged:
-            for name in re.findall(r"^\s*(?:from|import)\s+(\w+)", source.read_text(), re.M):
-                if name in local and name not in installed:
-                    missing.add(f"{name}.py (imported by {source.name})")
-        self.assertEqual(sorted(missing), [])
+        script = (Path(__file__).resolve().parent.parent / "packaging" / "build-deb.sh").read_text()
+        self.assertIn("(cd src && find keep_backup -type f", script)
+        self.assertIsNone(re.search(r"\binstall\b[^\n]*\b\w+\.py\b", script))
+
 
 if __name__ == "__main__":
     unittest.main()

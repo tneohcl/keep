@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 _SPEC = importlib.util.spec_from_file_location(
-    "keep_acceptance", Path(__file__).resolve().parent.parent / "packaging" / "acceptance.py")
+    "keep_acceptance", Path(__file__).resolve().parent.parent / "scripts" / "acceptance.py")
 acceptance = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(acceptance)
 

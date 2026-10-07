@@ -18,8 +18,8 @@ from PySide6.QtWidgets import QApplication, QFrame, QVBoxLayout, QWidget  # noqa
 
 APP = QApplication.instance() or QApplication([])
 
-import main  # noqa: E402
-from keep_ui.backup_list import BackupListPanel  # noqa: E402
+from keep_backup.ui import main_window  # noqa: E402
+from keep_backup.ui.backup_list import BackupListPanel  # noqa: E402
 
 
 def span(widget, window):
@@ -30,8 +30,8 @@ def span(widget, window):
 class SidebarSwitch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with patch.object(main.MainWindow, "refresh_status", lambda self: None):
-            cls.window = main.MainWindow()
+        with patch.object(main_window.MainWindow, "refresh_status", lambda self: None):
+            cls.window = main_window.MainWindow()
         cls.window.resize(1100, 720)
         cls.window.show()
         APP.processEvents()
@@ -110,8 +110,8 @@ class ShortStatusSidebar(unittest.TestCase):
         APP.setFont(cls._font)
 
     def setUp(self):
-        with patch.object(main.MainWindow, "refresh_status", lambda self: None):
-            self.window = main.MainWindow()
+        with patch.object(main_window.MainWindow, "refresh_status", lambda self: None):
+            self.window = main_window.MainWindow()
         self.addCleanup(self.window.close)
         panel = self.window.backup_panel
         panel.destination_choice.setValue("NAS share · Synology-DS920plus-Living-Room · /volume1/backups")

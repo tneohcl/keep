@@ -18,10 +18,10 @@ from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-import main  # noqa: E402
-import recovery_test  # noqa: E402
-from keep_ui.safe_copy import restore_entries  # noqa: E402
-from keep_ui.status_icons import SuccessBadge  # noqa: E402
+from keep_backup.ui import main_window  # noqa: E402
+from keep_backup.core import recovery_test  # noqa: E402
+from keep_backup.ui.safe_copy import restore_entries  # noqa: E402
+from keep_backup.ui.status_icons import SuccessBadge  # noqa: E402
 
 REPO = "/mnt/backups/repo"
 REPO_ID = "a" * 64
@@ -43,26 +43,26 @@ class UnknownIdentityHistory(unittest.TestCase):
 
     def setUp(self):
         self.logdir = tempfile.mkdtemp()
-        patcher = patch.object(main, "LOGDIR", self.logdir)
+        patcher = patch.object(main_window, "LOGDIR", self.logdir)
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_unknown_id_still_finds_this_locations_history(self):
         write_log(self.logdir, "20260926", "backup completed successfully")
-        verdict, ts = main.last_backup_attempt_status(REPO, None)
+        verdict, ts = main_window.last_backup_attempt_status(REPO, None)
         self.assertEqual(verdict, "ok")
         self.assertTrue(ts)
-        self.assertEqual(main.backup_history(REPO, None), ("ok", ts, False))
-        self.assertEqual(main.backup_history(REPO, REPO_ID), ("ok", ts, True))
+        self.assertEqual(main_window.backup_history(REPO, None), ("ok", ts, False))
+        self.assertEqual(main_window.backup_history(REPO, REPO_ID), ("ok", ts, True))
 
     def test_log_for_another_repository_is_never_used(self):
         write_log(self.logdir, "20260926", "backup completed successfully", repository_id=OTHER_ID)
-        self.assertEqual(main.backup_history(REPO, REPO_ID)[0], "never run")
-        self.assertEqual(main.backup_history("/elsewhere", None)[0], "never run")
+        self.assertEqual(main_window.backup_history(REPO, REPO_ID)[0], "never run")
+        self.assertEqual(main_window.backup_history("/elsewhere", None)[0], "never run")
 
     def test_log_without_an_id_is_unverified_history(self):
         write_log(self.logdir, "20260925", "backup completed successfully", repository_id=None)
-        self.assertEqual(main.backup_history(REPO, REPO_ID)[::2], ("ok", False))
+        self.assertEqual(main_window.backup_history(REPO, REPO_ID)[::2], ("ok", False))
 
 
 class Headline(QLabel):
@@ -75,7 +75,7 @@ class Headline(QLabel):
 class UnknownIdentityHeadline(unittest.TestCase):
     def headline(self, *args, **kwargs):
         probe = Headline()
-        main.MainWindow._apply_status_headline(probe, *args, **kwargs)
+        main_window.MainWindow._apply_status_headline(probe, *args, **kwargs)
         return probe.lbl_headline.text(), probe.headline_icon.state()
 
     def test_unverified_success_is_not_claimed(self):
@@ -136,11 +136,11 @@ class LegacyRecords(unittest.TestCase):
         check = self.write("last-check.json", {"repository": REPO, "result": "success",
                                                "finished": "2026-09-25T12:03:00+08:00"})
         before = {path: path.read_text() for path in (test, access, check)}
-        with patch.object(main.MainWindow, "refresh_status", lambda self: None):
-            window = main.MainWindow()
+        with patch.object(main_window.MainWindow, "refresh_status", lambda self: None):
+            window = main_window.MainWindow()
         self.addCleanup(window.deleteLater)
         window._pending_select_latest = False       # set by a real query start
-        with patch.object(main, "REPO", REPO), patch.object(main, "DEST_STATUS", {"available": True, "repo": REPO}):
+        with patch.object(main_window, "REPO", REPO), patch.object(main_window, "DEST_STATUS", {"available": True, "repo": REPO}):
             window._on_status_query_finished(REPO, {"repository": {"id": REPO_ID}},
                                              {"archives": [{"name": "newest", "start": "2027-04-01T04:00:00"}]}, False)
         self.assertEqual({path: path.read_text() for path in before}, before)
@@ -253,7 +253,7 @@ class TemporaryFileOwnership(unittest.TestCase):
 
     def test_unreadable_source_closes_and_removes_the_temporary_file(self):
         import tempfile as tempfile_module
-        from keep_ui import safe_copy
+        from keep_backup.ui import safe_copy
         root = Path(tempfile.mkdtemp())
         unreadable = root / "locked.bin"
         unreadable.write_bytes(b"x")

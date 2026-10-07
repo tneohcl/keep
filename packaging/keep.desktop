@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Keep Backup
-Comment=Back up and recover your files
-Exec=keep
-Icon=keep
-Terminal=false
-Categories=Utility;Archiving;
-Keywords=backup;restore;borg;

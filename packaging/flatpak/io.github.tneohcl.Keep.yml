@@ -35,16 +35,19 @@ modules:
   - name: keep
     buildsystem: simple
     build-commands:
-      - mkdir -p /app/share/keep
-      - cp -r *.py keep_ui vendor style.qss check.svg chevron-down.svg LICENSE README.md DISASTER_RECOVERY.md /app/share/keep/
-      - rm -f /app/share/keep/test_*.py
-      - 'printf ''{"built": "%s", "by": "Flatpak"}\n'' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > /app/share/keep/BUILD_INFO'
+      # The whole package, into the sandbox Python's site-packages under /app
+      # (asked from Python, so a runtime update to a newer Python still works).
+      - 'site=$(python3 -c "import sysconfig; print(sysconfig.get_path(\"purelib\", vars={\"base\": \"/app\"}))")
+        && (cd src && find keep_backup -type f ! -path "*/__pycache__/*" ! -name "*.pyc")
+        | while read -r file; do install -Dm644 "src/$file" "$site/$file"; done
+        && printf ''{"built": "%s", "by": "Flatpak"}\n'' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$site/keep_backup/BUILD_INFO"'
+      - install -Dm644 -t /app/share/keep LICENSE README.md DISASTER_RECOVERY.md
       - install -Dm755 packaging/flatpak/keep.sh /app/bin/keep
       - ln -s keep /app/bin/keep-backup
       - ln -s keep /app/bin/keep-cli
-      - install -Dm644 packaging/flatpak/io.github.tneohcl.Keep.desktop /app/share/applications/io.github.tneohcl.Keep.desktop
-      - install -Dm644 packaging/flatpak/io.github.tneohcl.Keep.metainfo.xml /app/share/metainfo/io.github.tneohcl.Keep.metainfo.xml
-      - install -Dm644 packaging/flatpak/io.github.tneohcl.Keep.svg /app/share/icons/hicolor/scalable/apps/io.github.tneohcl.Keep.svg
+      - install -Dm644 data/io.github.tneohcl.Keep.desktop /app/share/applications/io.github.tneohcl.Keep.desktop
+      - install -Dm644 data/io.github.tneohcl.Keep.metainfo.xml /app/share/metainfo/io.github.tneohcl.Keep.metainfo.xml
+      - install -Dm644 data/io.github.tneohcl.Keep.svg /app/share/icons/hicolor/scalable/apps/io.github.tneohcl.Keep.svg
     sources:
       - type: dir
         path: ../..

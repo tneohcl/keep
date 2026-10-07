@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import applications
-import host
+from keep_backup.core import applications
+from keep_backup.core import host
 
 APP_ID = "io.github.tneohcl.Keep"
 
@@ -110,13 +110,13 @@ class AppIcons(unittest.TestCase):
         from PySide6.QtGui import QIcon
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
-        import main
+        from keep_backup.ui import main_window
         extra = tempfile.mkdtemp()
         before = QIcon.themeSearchPaths()
         self.addCleanup(QIcon.setThemeSearchPaths, before)
         with patch.object(host, "icon_dirs", return_value=[Path(extra)]):
-            main.extend_icon_search_paths()
-            main.extend_icon_search_paths()
+            main_window.extend_icon_search_paths()
+            main_window.extend_icon_search_paths()
         self.assertEqual(QIcon.themeSearchPaths().count(extra), 1)
 
     def test_data_folder_entries_try_the_folder_name_as_their_icon(self):
@@ -175,14 +175,14 @@ class RunningAppCheck(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
-        import main
+        from keep_backup.ui import main_window
         calls = []
 
         def fake_run(argv, **kwargs):
             calls.append(argv)
             return type("Done", (), {"returncode": 0})()
-        with patch.object(host, "flatpak_id", return_value=APP_ID), patch.object(main.subprocess, "run", fake_run):
-            self.assertTrue(main.is_native_process_running(["krita"]))
+        with patch.object(host, "flatpak_id", return_value=APP_ID), patch.object(main_window.subprocess, "run", fake_run):
+            self.assertTrue(main_window.is_native_process_running(["krita"]))
         self.assertEqual(calls, [["flatpak-spawn", "--host", "--directory=/", "pgrep", "-x", "krita"]])
 
 

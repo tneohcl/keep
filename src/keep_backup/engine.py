@@ -29,9 +29,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-import consumer
-import destination
-from operation_lock import RepositoryLock, RepositoryBusy
+from keep_backup.core import consumer
+from keep_backup.core import destination
+from keep_backup.core.operation_lock import RepositoryLock, RepositoryBusy
 
 
 # Longer than the GUI's three-minute idle mount timeout, but never indefinite.
@@ -518,7 +518,7 @@ def _run_with_log(config_path: str, log) -> int:
         _write(log, f"ERROR could not read configuration: {exc}")
         return 2
     consumer.normalize_config(config)
-    from applications import selection_conflict
+    from keep_backup.core.applications import selection_conflict
     if selection_conflict(config, [entry["path"] for entry in consumer.backup_source_entries(config)]):
         _write(log, "ERROR selected folders overlap application data; remove broad app-data/home folders or use all application data")
         return 2

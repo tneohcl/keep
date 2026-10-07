@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
-import recovery_test
+from keep_backup.core import recovery_test
 
 PASSPHRASE = "recovery-test-passphrase-41"
 

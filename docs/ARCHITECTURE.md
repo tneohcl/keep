@@ -4,29 +4,35 @@ Updated: 2026-09-23. Current status: personal beta; consumer production release 
 
 ## Module ownership
 
+The code is the `keep_backup` package in `src/keep_backup/`; paths below are relative to it.
+`core/` holds the engine logic and must not import Qt (`tests/test_layout.py` enforces it),
+`ui/` holds the Qt application, and `engine.py` (`keep-backup`, what the timer runs) and
+`cli.py` (`keep-cli`) are the headless entry points. The checkout's root `keep_backup.py` is
+only a launcher kept at that path for older timer units.
+
 | Module | Responsibility |
 | --- | --- |
-| `main.py` | Application composition, configuration/session context, backup and restore handlers, credential dialogs and Borg adapters |
-| `keep_ui/backup_panel.py` | Fixed backup controls and their callbacks |
-| `keep_ui/status_page.py` | Summary, activity, progress, details and log surfaces |
-| `keep_ui/restore_page.py` | Archive selector, restore tabs and advanced file browser |
-| `keep_ui/restore_picker.py` | Checkable catalog, view modes, placeholders and selection summaries |
-| `keep_ui/application_selection.py` | Backup application/settings choices; configuration and home are explicit inputs |
-| `keep_ui/checkable_list.py` | Native checkable list with full-cell mouse toggling and explicit cell sizes for wrapped labels |
-| `keep_ui/restore_results.py` | Shared bounded restore-results dialog with scrollable plain-text paths and errors |
-| `keep_ui/common.py` | Shared disclosure widget |
-| `app_logging.py` | Private per-launch diagnostics, bounded rotation, safe exception hooks |
-| `mount_service.py` | Re-entry guard, open/recovery states and bounded authentication retry policy; no Qt imports |
-| `keep_ui/mount_progress.py` | Background mount worker and its modal Qt progress adapter |
-| `applications.py` | Known data mappings, desktop/Flatpak installation detection, display names and selected source resolution |
-| `consumer.py`, `destination.py`, `keep_backup.py` | Configuration/schedules, destination resolution and unattended backup execution |
-| `style.qss`, `themes.py`, `theming.py` | Shared visual rules, color tokens and live palette integration |
+| `ui/main_window.py` | Application composition, configuration/session context, backup and restore handlers, credential dialogs and Borg adapters |
+| `ui/backup_panel.py` | Fixed backup controls and their callbacks |
+| `ui/status_page.py` | Summary, activity, progress, details and log surfaces |
+| `ui/restore_page.py` | Archive selector, restore tabs and advanced file browser |
+| `ui/restore_picker.py` | Checkable catalog, view modes, placeholders and selection summaries |
+| `ui/application_selection.py` | Backup application/settings choices; configuration and home are explicit inputs |
+| `ui/checkable_list.py` | Native checkable list with full-cell mouse toggling and explicit cell sizes for wrapped labels |
+| `ui/restore_results.py` | Shared bounded restore-results dialog with scrollable plain-text paths and errors |
+| `ui/common.py` | Shared disclosure widget |
+| `ui/app_logging.py` | Private per-launch diagnostics, bounded rotation, safe exception hooks |
+| `core/mount_service.py` | Re-entry guard, open/recovery states and bounded authentication retry policy; no Qt imports |
+| `ui/mount_progress.py` | Background mount worker and its modal Qt progress adapter |
+| `core/applications.py` | Known data mappings, desktop/Flatpak installation detection, display names and selected source resolution |
+| `core/consumer.py`, `core/destination.py`, `engine.py` | Configuration/schedules, destination resolution and unattended backup execution |
+| `ui/assets/style.qss`, `ui/themes.py`, `ui/theming.py` | Shared visual rules, color tokens and live palette integration |
 
 ## Boundaries
 
 UI modules never import `main`. They receive input data, a picker factory or controller callbacks. They do not launch Borg or modify configuration directly. `CONTROL_NAMES` explicitly identifies view-owned controls used by existing application handlers; avoid automatic attribute copying. New view-local behavior belongs in its view, not in the entry point.
 
-`ItemPicker` in `main.py` subclasses `RestorePicker` and owns safe/direct restore operations. Selection is exclusively checked state, never highlighted rows. Copy plain path data before ensuring the mount: opening another archive can rebuild and delete the old Qt items.
+`ItemPicker` in `ui/main_window.py` subclasses `RestorePicker` and owns safe/direct restore operations. Selection is exclusively checked state, never highlighted rows. Copy plain path data before ensuring the mount: opening another archive can rebuild and delete the old Qt items.
 
 `MountCoordinator.open()` guards the entire opening transaction, including recovery dialogs. States describe that transaction: idle, opening, recovering, ready or failed. Mounted archive identity remains in the application session. Never clear mounted state before an unmount succeeds. Recovery callbacks return approval/success; each key/passphrase recovery receives at most one mount retry. Passive status refresh must not prompt for credentials.
 
@@ -35,7 +41,7 @@ Initialize the theme controller on the application before applying its styleshee
 ## Runtime flows
 
 - **Interactive backup:** `MainWindow` starts the backup worker, receives progress and completion signals, and updates Status. Prescan byte totals use Qt `qint64` to avoid overflow above 2 GiB.
-- **Scheduled backup:** the user systemd `keep-backup.timer` activates `keep-backup.service`, which invokes `keep_backup.py --config <path>` without starting Qt. The built-in engine resolves sources and destination, checks repository access, and runs Borg create, prune and compact with detailed logging. Legacy external-script configurations remain supported.
+- **Scheduled backup:** the user systemd `keep-backup.timer` activates `keep-backup.service`, which runs the engine (`keep-backup --config <path>`, `engine.py`) without starting Qt. The built-in engine resolves sources and destination, checks repository access, and runs Borg create, prune and compact with detailed logging. Legacy external-script configurations remain supported.
 - **Archive browsing:** the controller requests a mount through `MountCoordinator`; `ArchiveMountWorker` performs the blocking mount in a Qt worker thread. Catalogs describe the mounted archive; an installation snapshot controls default visibility of application entries.
 - **Restore:** curated Apps/Folders use `ItemPicker`; Advanced uses the file-browser handler. Safe restore writes a review copy under `~/Keep-Restored`. Direct restore first copies existing content to an undo location, then replaces the selected live paths. All three result presentations use `RestoreResultsDialog`.
 
@@ -60,7 +66,7 @@ Initialize the theme controller on the application before applying its styleshee
 | Session diagnostics | `$XDG_STATE_HOME/keep/logs`, defaulting to `~/.local/state/keep/logs`; private files, bounded rotation and retention |
 | Detailed backup logs | `~/.local/state/borg-logs` by default; separate from session diagnostics |
 | Scheduled units | `~/.config/systemd/user/keep-backup.service` and `keep-backup.timer` |
-| Debian application files | `/usr/lib/keep`; launcher `/usr/bin/keep` |
+| Debian application files | `/usr/lib/python3/dist-packages/keep_backup`; commands `/usr/bin/keep`, `keep-cli`, `keep-backup`; `/usr/lib/keep/keep_backup.py` only for older timer units |
 | Source checkout launch | `launch.sh`; may create a private `.venv` for Qt dependencies |
 
 Session logging starts before GUI/configuration imports for a real application launch. It records lifecycle, operation outcomes and limited exception metadata without raw exception messages, credentials or full command environments. Backup logs and restore-result details have a different purpose and can contain user paths; do not assume session-log redaction applies to them.
@@ -85,29 +91,29 @@ python -m tests.test_gui_smoke
 Failure-scenario acceptance (Linux, unprivileged; needs `unshare`, `borg` and a PySide6 Python):
 
 ```sh
-packaging/acceptance.sh
+scripts/acceptance.sh
 ```
 
-It runs `keep_backup.py` against throwaway repositories in a user + mount namespace with a temporary HOME, so real config, passphrase, logs and backups are never touched. It covers four cases: the NAS isn't mounted at start, the destination disappears mid-backup, a crash (SIGKILL) mid-archive, and the destination filling up. Each checks that the run is never reported as a success, that the Status page says it failed, and that after recovery the next backup succeeds and `borg check` passes. About 30 seconds.
+It runs the engine (through the checkout's `keep_backup.py` launcher, as a source-checkout timer does) against throwaway repositories in a user + mount namespace with a temporary HOME, so real config, passphrase, logs and backups are never touched. It covers four cases: the NAS isn't mounted at start, the destination disappears mid-backup, a crash (SIGKILL) mid-archive, and the destination filling up. Each checks that the run is never reported as a success, that the Status page says it failed, and that after recovery the next backup succeeds and `borg check` passes. About 30 seconds.
 
 Full Debian/Borg/FUSE suite and installed-package smoke check:
 
 ```sh
-docker build -f packaging/Dockerfile.test -t keep-validation .
+docker build -f scripts/Dockerfile.test -t keep-validation .
 docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=unconfined keep-validation
 ```
 
 Run only the package check in a disposable container:
 
 ```sh
-docker run --rm keep-validation bash packaging/test-package.sh
+docker run --rm keep-validation bash scripts/test-package.sh
 ```
 
-The package probe runs outside the checkout and imports `/usr/lib/keep/main.py`, so source files cannot hide packaging omissions. The test image contains all dependencies; no user repository or credentials are mounted into it. Shell scripts must retain LF endings. The legacy recovery harness uses throwaway encrypted repositories; current visual behavior is covered by `test_gui_smoke.py` and `test_theming.py`, replacing assertions about deleted controls/delegates.
+The package probe runs outside the checkout and imports the installed `keep_backup` from dist-packages, so source files cannot hide packaging omissions. The test image contains all dependencies; no user repository or credentials are mounted into it. Shell scripts must retain LF endings. The legacy recovery harness uses throwaway encrypted repositories; current visual behavior is covered by `test_gui_smoke.py` and `test_theming.py`, replacing assertions about deleted controls/delegates.
 
 `tests/test_restore_copy.py` exercises real nested broken links, links to Unix sockets, directory links and unsuppressed copy errors; those filesystem checks run on Linux and skip on Windows. GUI smoke checks cover full-cell selection, stable hover geometry, bulk selection, catalog grouping, bounded result dialogs and both themes. Native desktop interaction and accessibility still need real-machine acceptance.
 
-The package allowlist includes Python modules, `keep_ui/*.py`, QSS and SVG assets, including `check.svg` and `chevron-down.svg`. Add required assets to packaging when introducing them. Refresh `dist/SHA256SUMS` after rebuilding a distributable package. A successful old validation log is not evidence for subsequently changed behavior.
+The .deb and the Flatpak install the whole `src/keep_backup` directory (code, `ui/assets/`, the bundled odcs-ui), so a new module or asset is included without touching the packaging. Refresh `dist/SHA256SUMS` after rebuilding a distributable package. A successful old validation log is not evidence for subsequently changed behavior.
 
 ## Consumer-release architecture priorities (planned)
 
@@ -123,7 +129,7 @@ These are release requirements, not claims that the corresponding features are i
 
 ## Remaining boundaries
 
-`main.py` still contains backend adapters, catalog construction and credential/restore workflows. These are existing behavior, not new UI responsibilities. Extract those into focused services when changing them; do not move them through implicit global imports. Container tests do not establish accessibility, host desktop integration or unattended systemd behavior on every distribution.
+`ui/main_window.py` still contains backend adapters, catalog construction and credential/restore workflows. These are existing behavior, not new UI responsibilities. Extract those into focused services when changing them; do not move them through implicit global imports. Container tests do not establish accessibility, host desktop integration or unattended systemd behavior on every distribution.
 
 ## Scheduled-backup contention policy (0.9.1)
 
@@ -135,11 +141,11 @@ This is a per-command wait, not an overall operation deadline or cross-process K
 
 ## CLI foundation (0.9.2)
 
-`cli.py` provides `status`, `archives`, `doctor`, `logs`, and routine/deep `check` without importing Qt. `borg_ops.py` accepts explicit execution environments; the GUI retains responsibility for resolving session credentials before calling shared JSON-query and authentication-classification helpers. `operation_lock.py` coordinates same-user repository operations across CLI, GUI mount/delete and the built-in scheduled engine. Borg locks still protect access from other clients and users. See [CLI.md](CLI.md) for output, exit-code, cancellation and credential contracts and current limits.
+`cli.py` provides `status`, `archives`, `doctor`, `logs`, and routine/deep `check` without importing Qt. `core/borg_ops.py` accepts explicit execution environments; the GUI retains responsibility for resolving session credentials before calling shared JSON-query and authentication-classification helpers. `core/operation_lock.py` coordinates same-user repository operations across CLI, GUI mount/delete and the built-in scheduled engine. Borg locks still protect access from other clients and users. See [CLI.md](CLI.md) for output, exit-code, cancellation and credential contracts and current limits.
 
-`recovery_test.py` implements the recorded **Test recovery…** check without Qt. With an empty `BORG_KEYS_DIR` and a fresh security directory, it opens the repository using only the passphrase the person types (passed to Borg on a pipe, never in argv or the environment). It restores one randomly chosen file of 16 MB or less from the latest archive into a private temporary folder, compares its size and SHA-256 with the archive's own record, then deletes the folder. `~/.local/state/keep/recovery-test.json` records only the outcome, repository, archive name and date, and only for outcomes that say something about recoverability. The Status page's *Recovery tested* fact reads it and asks for a new test after six months. `keep_ui/recovery_test_dialog.py` runs the test under `RepositoryLock`, so it never contends with a backup, delete or open archive.
+`core/recovery_test.py` implements the recorded **Test recovery…** check without Qt. With an empty `BORG_KEYS_DIR` and a fresh security directory, it opens the repository using only the passphrase the person types (passed to Borg on a pipe, never in argv or the environment). It restores one randomly chosen file of 16 MB or less from the latest archive into a private temporary folder, compares its size and SHA-256 with the archive's own record, then deletes the folder. `~/.local/state/keep/recovery-test.json` records only the outcome, repository, archive name and date, and only for outcomes that say something about recoverability. The Status page's *Recovery tested* fact reads it and asks for a new test after six months. `ui/recovery_test_dialog.py` runs the test under `RepositoryLock`, so it never contends with a backup, delete or open archive.
 
-`keep_ui/recovery_access.py` (sidebar *Recovery access*, Backup ▸ Recovery access…) keeps two kinds of facts apart. *Verified by Keep* comes from the last status query: destination reachable, encryption mode (repokey or keyfile), whether the saved passphrase opens the repository, and whether a key file was exported with Keep. *Only you can confirm* is three dated checkboxes (passphrase in a password manager, printed kit stored away, destination reachable without this computer), saved per repository in `recovery-access.json` and asked again after a year. Keep never records where the copies are. **Export key file…** runs `borg key export` off the UI thread and writes the file with mode 0600.
+`ui/recovery_access.py` (sidebar *Recovery access*, Backup ▸ Recovery access…) keeps two kinds of facts apart. *Verified by Keep* comes from the last status query: destination reachable, encryption mode (repokey or keyfile), whether the saved passphrase opens the repository, and whether a key file was exported with Keep. *Only you can confirm* is three dated checkboxes (passphrase in a password manager, printed kit stored away, destination reachable without this computer), saved per repository in `recovery-access.json` and asked again after a year. Keep never records where the copies are. **Export key file…** runs `borg key export` off the UI thread and writes the file with mode 0600.
 
 Integrity outcomes are persisted separately in XDG state and displayed in Status details for the matching repository after refresh. Maintenance timers, restore CLI and interactive prompts remain future work. `keep-cli` is packaged alongside `keep`; only the command execution path is Qt-independent, not the combined package dependencies.
 

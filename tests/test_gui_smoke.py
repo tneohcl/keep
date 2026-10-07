@@ -8,11 +8,11 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 with tempfile.TemporaryDirectory() as directory:
     os.environ["KEEP_CONFIG_PATH"] = str(Path(directory) / "config.json")
     os.environ["XDG_STATE_HOME"] = str(Path(directory) / "state")
-    import main
-    main.LOGDIR = str(Path(directory) / "logs")
-    Path(main.LOGDIR).mkdir()
+    from keep_backup.ui import main_window
+    main_window.LOGDIR = str(Path(directory) / "logs")
+    Path(main_window.LOGDIR).mkdir()
     for day, verdict in (("14", "with warnings"), ("15", "successfully")):
-        (Path(main.LOGDIR) / f"backup-202609{day}-093000.log").write_text(
+        (Path(main_window.LOGDIR) / f"backup-202609{day}-093000.log").write_text(
             f"2026-09-{day}T09:30:00+08:00 Keep backup started\nbackup completed {verdict}\n")
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import QCoreApplication, QEvent
@@ -29,15 +29,15 @@ with tempfile.TemporaryDirectory() as directory:
         (scope_logs / f"backup-{name}.log").write_text(
             f"2026-09-25T08:00:00+08:00 Repository: {repo}\n"
             f"2026-09-25T08:00:00+08:00 Repository ID: {repo_id}\nbackup completed successfully\n")
-    with patch.object(main, "LOGDIR", str(scope_logs)):
-        assert main.last_backup_attempt_status("/a", "a-id")[0] == "ok"
-        assert main.last_backup_attempt_status("/a", "replacement-id")[0] == "never run"
+    with patch.object(main_window, "LOGDIR", str(scope_logs)):
+        assert main_window.last_backup_attempt_status("/a", "a-id")[0] == "ok"
+        assert main_window.last_backup_attempt_status("/a", "replacement-id")[0] == "never run"
         # Unknown ID: this location's history, marked unverified - never "no backups".
-        assert main.backup_history("/a", None) == ("ok", "2026-09-25T08:00:00+08:00", False)
-        assert main.backup_history("/a", "a-id")[2] is True
-        assert main.backup_history("/c", None)[0] == "never run"
+        assert main_window.backup_history("/a", None) == ("ok", "2026-09-25T08:00:00+08:00", False)
+        assert main_window.backup_history("/a", "a-id")[2] is True
+        assert main_window.backup_history("/c", None)[0] == "never run"
     # Large results remain within the screen, with all diagnostics accessible.
-    from keep_ui.restore_results import RestoreResultsDialog
+    from keep_backup.ui.restore_results import RestoreResultsDialog
     results = RestoreResultsDialog(None, [f"App {i}: /restored/app-{i}" for i in range(300)],
                                    ["Failed app: " + "long/path/" * 400], "/restored")
     results.show()
@@ -50,11 +50,11 @@ with tempfile.TemporaryDirectory() as directory:
     results.close()
     results.deleteLater()
     # Bulk actions check catalog entries, including Folders, without selecting hidden apps.
-    from keep_ui.restore_picker import RestorePicker
+    from keep_backup.ui.restore_picker import RestorePicker
     picker = RestorePicker("", installed_apps_provider=lambda: type("Installed", (), {"contains": lambda self, *ids: "Krita" in ids})())
-    picker.populate([main.CatalogEntry("Krita", None, [("config/krita", "/config/krita")], "krita", "applications"),
-                     main.CatalogEntry("Old app", None, [("config/old", "/config/old")], "old", "applications"),
-                     main.CatalogEntry("Documents", None, [("docs", "/docs")], "folder", "folders")])
+    picker.populate([main_window.CatalogEntry("Krita", None, [("config/krita", "/config/krita")], "krita", "applications"),
+                     main_window.CatalogEntry("Old app", None, [("config/old", "/config/old")], "old", "applications"),
+                     main_window.CatalogEntry("Documents", None, [("docs", "/docs")], "folder", "folders")])
     picker.select_all_button.click()
     assert len(picker._all_items()) == 2
     picker.set_list_view()
@@ -65,19 +65,19 @@ with tempfile.TemporaryDirectory() as directory:
     assert not picker.select_all_button.isEnabled()
     picker.deleteLater()
     # Known native data joins the same app's Flatpak tile without losing paths.
-    archive_home = Path(directory) / "archive" / main.HOME_IN_ARCHIVE
+    archive_home = Path(directory) / "archive" / main_window.HOME_IN_ARCHIVE
     for relative in (".var/app/org.gimp.GIMP", ".config/GIMP", ".var/app/org.kde.krita", ".local/share/krita"):
         folder = archive_home / relative
         folder.mkdir(parents=True)
         (folder / "settings").write_text("data")
-    with patch.object(main, "MOUNTPOINT", str(Path(directory) / "archive")), patch.object(main, "CROSS_INSTALL_APPS", {}), patch.object(main, "CURATED_ITEMS", []), patch.object(main, "EXTRA_PATHS", {}), patch.object(main, "flatpak_app_names", return_value={"org.gimp.GIMP": "GNU Image Manipulation Program", "org.kde.krita": "Krita"}):
-        catalog = main.build_app_catalog()
+    with patch.object(main_window, "MOUNTPOINT", str(Path(directory) / "archive")), patch.object(main_window, "CROSS_INSTALL_APPS", {}), patch.object(main_window, "CURATED_ITEMS", []), patch.object(main_window, "EXTRA_PATHS", {}), patch.object(main_window, "flatpak_app_names", return_value={"org.gimp.GIMP": "GNU Image Manipulation Program", "org.kde.krita": "Krita"}):
+        catalog = main_window.build_app_catalog()
         for appid in ("org.gimp.GIMP", "org.kde.krita"):
             entries = [entry for entry in catalog if entry.icon == appid]
             assert len(entries) == 1, entries
             assert len(entries[0].rel_paths) == 2, entries
 
-    from keep_ui.checkable_list import CheckableListWidget
+    from keep_backup.ui.checkable_list import CheckableListWidget
     from PySide6.QtWidgets import QListWidgetItem, QStyleOptionViewItem, QStyle
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtCore import Qt, QPointF, QEvent
@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as directory:
     choices.resize(400, 180)
     choices.show()
     app.processEvents()
-    for mode in (main.QListWidget.IconMode, main.QListWidget.ListMode):
+    for mode in (main_window.QListWidget.IconMode, main_window.QListWidget.ListMode):
         choices.setViewMode(mode)
         app.processEvents()
         option = QStyleOptionViewItem()
@@ -106,10 +106,10 @@ with tempfile.TemporaryDirectory() as directory:
     choices.close()
     choices.deleteLater()
 
-    main.CONFIG["setup_complete"] = True
-    main.CONFIG["destination"]["label"] = "External backup drive"
-    with patch.object(main.MainWindow, "refresh_status", lambda self: None):
-        window = main.MainWindow()
+    main_window.CONFIG["setup_complete"] = True
+    main_window.CONFIG["destination"]["label"] = "External backup drive"
+    with patch.object(main_window.MainWindow, "refresh_status", lambda self: None):
+        window = main_window.MainWindow()
     assert app.styleSheet() and "$" not in app.styleSheet()
     assert window.btn_backup.property("role") == "primary"
     # Exercise queued worker-to-GUI delivery across the 32-bit boundary.
@@ -123,7 +123,7 @@ with tempfile.TemporaryDirectory() as directory:
         def receive(self, value):
             assert QThread.currentThread() == app.thread()
             self.received.append(value)
-    class LargeBackupProbe(main.BackupWorker):
+    class LargeBackupProbe(main_window.BackupWorker):
         def run(self):
             for value in totals:
                 self.prescan_total.emit(value)
@@ -158,7 +158,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert window.action_back_up_now.shortcut().toString() == "Ctrl+B"
     assert window.archive_combo.accessibleName()
     assert window.pages.currentIndex() == 0
-    with patch.object(main.MainWindow, "ensure_mounted", lambda self: (_ for _ in ()).throw(AssertionError("Navigation must not mount"))):
+    with patch.object(main_window.MainWindow, "ensure_mounted", lambda self: (_ for _ in ()).throw(AssertionError("Navigation must not mount"))):
         window.pages.setCurrentIndex(1)
         assert window.pages.currentIndex() == 1
         window.action_show_log.setChecked(True)
@@ -167,7 +167,7 @@ with tempfile.TemporaryDirectory() as directory:
     window._set_repo_actions_enabled(False)
     assert not window.btn_compare_archives.isEnabled()
     window._set_repo_actions_enabled(True)
-    from mount_service import MountState
+    from keep_backup.core.mount_service import MountState
     window.mount_coordinator.state = MountState.OPENING
     with patch.object(window, "_ensure_mounted_impl") as nested_mount:
         assert window.ensure_mounted() is False
@@ -180,8 +180,8 @@ with tempfile.TemporaryDirectory() as directory:
             pass
         assert not window._opening_archive
     from types import SimpleNamespace
-    with patch.object(main.subprocess, "run", return_value=SimpleNamespace(stdout="borg 1.4", returncode=0)):
-        about = main.AboutDialog(window)
+    with patch.object(main_window.subprocess, "run", return_value=SimpleNamespace(stdout="borg 1.4", returncode=0)):
+        about = main_window.AboutDialog(window)
     about.show()
     app.processEvents()
     compact_size = about.size()
@@ -195,23 +195,23 @@ with tempfile.TemporaryDirectory() as directory:
         assert about.size() == compact_size, (about.size(), compact_size)
     about.close()
     about.deleteLater()
-    main.REPO = str(Path(directory) / "fixture-repo")
-    with patch.object(main.subprocess, "run", return_value=SimpleNamespace(returncode=0, stderr="")):
+    main_window.REPO = str(Path(directory) / "fixture-repo")
+    with patch.object(main_window.subprocess, "run", return_value=SimpleNamespace(returncode=0, stderr="")):
         assert window._attempt_mount("fixture") == (True, "")
         window._browse_operation_lock.release()
-    for failure in (main.subprocess.TimeoutExpired("borg", 60), OSError("fixture unavailable")):
-        with patch.object(main.subprocess, "run", side_effect=failure):
+    for failure in (main_window.subprocess.TimeoutExpired("borg", 60), OSError("fixture unavailable")):
+        with patch.object(main_window.subprocess, "run", side_effect=failure):
             ok, message = window._attempt_mount("fixture")
             assert not ok and message
-    assert isinstance(window.pages, main.QStackedWidget)
+    assert isinstance(window.pages, main_window.QStackedWidget)
     assert window.pages.count() == 2 and window.view_switch.currentIndex() == 0
     window.view_switch.setCurrentIndex(1)
     assert window.pages.currentIndex() == 1
     assert window.btn_review_restore.property("role") == "primary" and window.btn_backup.property("role") != "primary"
     assert not window.btn_review_restore.isHidden() and window.btn_restore.isHidden()
     # Review restore always defaults to a new Keep-Restored folder and says so.
-    from keep_ui.review_restore import ReviewRestoreDialog, display_path
-    review = ReviewRestoreDialog([f"item {n}" for n in range(12)], "Today at 8:51 AM", main.new_restore_folder(), main.HOME, window)
+    from keep_backup.ui.review_restore import ReviewRestoreDialog, display_path
+    review = ReviewRestoreDialog([f"item {n}" for n in range(12)], "Today at 8:51 AM", main_window.new_restore_folder(), main_window.HOME, window)
     assert "Keep-Restored" in review.destination and review.destination_label.text().replace("\\", "/").startswith("~/Keep-Restored/")
     assert review.restore_button.isDefault() and review.restore_button.property("role") == "primary"
     assert display_path("/elsewhere/x", "/home/me") == "/elsewhere/x"
@@ -219,12 +219,12 @@ with tempfile.TemporaryDirectory() as directory:
     # Choosing a parent folder must preserve existing content and choose a child.
     chosen_parent = Path(directory) / "existing-output"
     chosen_parent.mkdir()
-    with patch("keep_ui.review_restore.QFileDialog.getExistingDirectory", return_value=str(chosen_parent)):
+    with patch("keep_backup.ui.review_restore.QFileDialog.getExistingDirectory", return_value=str(chosen_parent)):
         review._change_folder()
     assert Path(review.destination).parent == chosen_parent and not Path(review.destination).exists()
     # Copying yields to the GUI event loop and finishes before releasing the dialog.
-    from keep_ui.restore_worker import run_restore
-    from keep_ui import safe_copy
+    from keep_backup.ui.restore_worker import run_restore
+    from keep_backup.ui import safe_copy
     from PySide6.QtCore import QTimer
     import time
     source = Path(directory) / "copy-source"
@@ -248,9 +248,9 @@ with tempfile.TemporaryDirectory() as directory:
     assert window.status_facts.whenText("recovery") == window.status_facts.NEVER
     assert window.btn_test_recovery.text() == "Test recovery…"
     assert window.action_test_recovery.text() == "Test recovery…"
-    from keep_ui.recovery_test_dialog import RecoveryTestDialog
+    from keep_backup.ui.recovery_test_dialog import RecoveryTestDialog
     dialog = RecoveryTestDialog("/nonexistent/repo", window)
-    assert dialog.passphrase.echoMode() == main.QLineEdit.Password
+    assert dialog.passphrase.echoMode() == main_window.QLineEdit.Password
     assert not dialog.start_button.isEnabled()
     dialog.passphrase.setText("typed")
     assert dialog.start_button.isEnabled() and dialog.start_button.property("role") == "primary"
@@ -263,7 +263,7 @@ with tempfile.TemporaryDirectory() as directory:
             {"name": "keep-host-2026-09-25_085149", "time": "2026-09-25T08:51:49.000000"}]}, select_latest=True)
         panel = window.backup_list_panel
         assert panel.list.count() == 2 and window.archive_combo.isHidden()
-        assert "newest" in panel.list.item(0).data(main.Qt.UserRole + 1)
+        assert "newest" in panel.list.item(0).data(main_window.Qt.UserRole + 1)
         assert "keep-host" not in panel.list.item(0).text()
         panel.list.setCurrentRow(1)
         assert window.archive_combo.currentText() == "keep-host-2026-09-24_040000"
@@ -277,8 +277,8 @@ with tempfile.TemporaryDirectory() as directory:
         # Search hides tiles (and empty sections); a click anywhere on a tile toggles it once.
         picker = window.apps_picker
         picker._installed_apps_provider = None  # don't depend on what this machine has installed
-        picker.populate([main.CatalogEntry("Firefox", None, [("f", "/f")], "firefox", "applications"),
-                     main.CatalogEntry("Krita", None, [("k", "/k")], "krita", "applications")])
+        picker.populate([main_window.CatalogEntry("Firefox", None, [("f", "/f")], "firefox", "applications"),
+                     main_window.CatalogEntry("Krita", None, [("k", "/k")], "krita", "applications")])
         section = picker._sections["applications"]
         picker.search.setText("fire")
         assert [section.item(i).isHidden() for i in range(section.count())] == [False, True]
@@ -296,8 +296,8 @@ with tempfile.TemporaryDirectory() as directory:
         def click(widget, pos):  # QtTest isn't in Debian's PySide6 packages
             for kind in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease):
                 event = QMouseEvent(kind, QPointF(pos), QPointF(widget.mapToGlobal(pos)),
-                                    main.Qt.LeftButton, main.Qt.LeftButton if kind == QEvent.MouseButtonPress else main.Qt.NoButton,
-                                    main.Qt.NoModifier)
+                                    main_window.Qt.LeftButton, main_window.Qt.LeftButton if kind == QEvent.MouseButtonPress else main_window.Qt.NoButton,
+                                    main_window.Qt.NoModifier)
                 QApplication.sendEvent(widget, event)
         window.resize(1200, 800)
         window.show()
@@ -305,17 +305,17 @@ with tempfile.TemporaryDirectory() as directory:
         app.processEvents()
         rect = section.visualItemRect(section.item(0))
         click(section.viewport(), rect.center())
-        assert section.item(0).checkState() == main.Qt.Checked
+        assert section.item(0).checkState() == main_window.Qt.Checked
         click(section.viewport(), rect.topLeft() + QPoint(18, rect.height() // 2))
-        assert section.item(0).checkState() == main.Qt.Unchecked  # the drawn checkbox: exactly one toggle
-        section.item(0).setCheckState(main.Qt.Checked)
-        original_snapshot = tuple(section.item(0).data(main.Qt.UserRole))
+        assert section.item(0).checkState() == main_window.Qt.Unchecked  # the drawn checkbox: exactly one toggle
+        section.item(0).setCheckState(main_window.Qt.Checked)
+        original_snapshot = tuple(section.item(0).data(main_window.Qt.UserRole))
         window._touch_activity()
         def review_and_reset(dialog):
             assert not window.unmount_timer.isActive()
             picker.reset_to_placeholder()
-            return main.QDialog.Accepted
-        with patch.object(main.ReviewRestoreDialog, "exec", review_and_reset), patch.object(picker, "restore_checked_safe") as restore:
+            return main_window.QDialog.Accepted
+        with patch.object(main_window.ReviewRestoreDialog, "exec", review_and_reset), patch.object(picker, "restore_checked_safe") as restore:
             window.review_restore()
             restore.assert_called_once()
             assert restore.call_args.kwargs["entries"][0][1:] == original_snapshot[0]
@@ -323,13 +323,13 @@ with tempfile.TemporaryDirectory() as directory:
         window.view_switch.setCurrentIndex(0)
         window.hide()
     # Recovery access: verified facts apart from dated personal confirmations.
-    from keep_ui import recovery_access
-    import recovery_test
+    from keep_backup.ui import recovery_access
+    from keep_backup.core import recovery_test
     window._refresh_facts({"repo": "/fixture/repo"})
     assert window.recovery_access_row.value() == "Not yet tested"
     access = recovery_access.RecoveryAccessDialog(
         "/fixture/repo", {"available": True, "label": "TITAN-i", "type": "network"},
-        {"encryption": {"mode": "repokey-blake2"}, "repository": {"id": "fixture-id"}}, 2, "Today at 9:00 AM", main.borg_env, lambda: None, window)
+        {"encryption": {"mode": "repokey-blake2"}, "repository": {"id": "fixture-id"}}, 2, "Today at 9:00 AM", main_window.borg_env, lambda: None, window)
     assert access.export_button.isEnabled() and access.test_button.property("role") == "primary"
     assert "sign in to TITAN-i" in access.confirm_boxes["destination_access"].text()
     access.confirm_boxes["passphrase_saved"].setChecked(True)
@@ -341,9 +341,9 @@ with tempfile.TemporaryDirectory() as directory:
     access.deleteLater()
     picker = window.apps_picker
     picker._installed_apps_provider = lambda: SimpleNamespace(contains=lambda *ids: "Firefox" in ids)
-    picker.populate([main.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications")])
+    picker.populate([main_window.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications")])
     section = next(iter(picker._sections.values()))
-    assert section.selectionMode() == main.QAbstractItemView.NoSelection
+    assert section.selectionMode() == main_window.QAbstractItemView.NoSelection
     assert not section.dragEnabled()
     # App cells must retain checkbox/icon/text geometry on hover and selection.
     from PySide6.QtWidgets import QStyleOptionViewItem, QStyle
@@ -364,16 +364,16 @@ with tempfile.TemporaryDirectory() as directory:
                                                     QStyle.SE_ItemViewItemText)))
         assert all(geometry == geometries[0] for geometry in geometries), geometries
 
-    section.item(0).setCheckState(main.Qt.Checked)
+    section.item(0).setCheckState(main_window.Qt.Checked)
     assert len(picker._all_items()) == 1
     assert "1" in picker.selection_summary.text()
     picker.set_list_view()
     assert len(picker._all_items()) == 1
-    section.item(0).setCheckState(main.Qt.Unchecked)
+    section.item(0).setCheckState(main_window.Qt.Unchecked)
     assert not picker._all_items()
     picker.populate([
-        main.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications"),
-        main.CatalogEntry("Removed app", None, [("old", "/old")], "removed", "applications"),
+        main_window.CatalogEntry("Firefox", None, [("data", "/data")], "firefox", "applications"),
+        main_window.CatalogEntry("Removed app", None, [("old", "/old")], "removed", "applications"),
     ])
     assert sum(section.count() for section in picker._sections.values()) == 1
     picker.show_uninstalled.setChecked(True)
@@ -414,15 +414,15 @@ with tempfile.TemporaryDirectory() as directory:
     window.hide()
     window.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-    with patch.object(main.MainWindow, "refresh_status", lambda self: None):
-        window = main.MainWindow()
+    with patch.object(main_window.MainWindow, "refresh_status", lambda self: None):
+        window = main_window.MainWindow()
     window.lbl_headline.setText("Last backup completed successfully")
     window.lbl_last.setText("Today, 09:30")
     window.lbl_next.setText("Tomorrow, 04:00")
     window.lbl_dest_status.setText("External backup drive")
     # refresh_status is mocked, so fill the sidebar as it would: the real
     # Recovery access summary, and a destination long enough to wrap.
-    window.recovery_access_row.setValue(*main.recovery_access.summary(None))
+    window.recovery_access_row.setValue(*main_window.recovery_access.summary(None))
     window.destination_choice.setValue("NAS share · Synology-DS920plus-Living-Room · /volume1/backups")
     window.resize(1000, 800)
     window.show()
@@ -432,23 +432,23 @@ with tempfile.TemporaryDirectory() as directory:
     assert window.recovery_access_row.value() == "Not yet tested"
     assert window.backup_panel.width() <= window.status_sidebar.viewport().width()
     assert window.grab().save(str(output / "large-text.png"))
-    import applications
+    from keep_backup.core import applications
     app_home = Path(directory) / "app-home"
     for relative in (".mozilla", ".var/app/org.mozilla.firefox", ".config/kritarc", ".ssh", ".gnupg", ".local/share/kwalletd"):
         (app_home / relative).mkdir(parents=True)
     with patch.object(applications, "InstalledApps", return_value=SimpleNamespace(entry_installed=lambda entry: entry["id"] == "firefox", icon=lambda *names: None)):
-        dialog = main.ApplicationSelectionDialog(main.CONFIG, app_home, window)
+        dialog = main_window.ApplicationSelectionDialog(main_window.CONFIG, app_home, window)
     dialog.all_data.setChecked(False)
     assert dialog.items.count() == 2
     assert not dialog.items.item(0).isHidden()
     assert dialog.items.item(1).isHidden()
-    old_apps = next(box for box in dialog.findChildren(main.QCheckBox) if box.text() == "Show data for uninstalled apps")
+    old_apps = next(box for box in dialog.findChildren(main_window.QCheckBox) if box.text() == "Show data for uninstalled apps")
     old_apps.setChecked(True)
     assert not dialog.items.item(1).isHidden()
     old_apps.setChecked(False)
     assert dialog.items.item(1).isHidden()
-    assert all(dialog.items.item(i).data(main.Qt.UserRole)["category"] == "applications" for i in range(dialog.items.count()))
-    dialog.items.item(1).setCheckState(main.Qt.Unchecked)
+    assert all(dialog.items.item(i).data(main_window.Qt.UserRole)["category"] == "applications" for i in range(dialog.items.count()))
+    dialog.items.item(1).setCheckState(main_window.Qt.Unchecked)
     assert dialog.selection() == ["firefox"]
     dialog.clear_selection_button.click()
     assert dialog.selection() == []
@@ -457,7 +457,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert not dialog.all_data.isChecked()
     assert dialog.selection() == ["firefox"]
     # Tiles: checkbox inside the tile next to icon + name (CheckTileDelegate).
-    from keep_ui.checkable_list import CheckTileDelegate
+    from keep_backup.ui.checkable_list import CheckTileDelegate
     assert isinstance(dialog.items.itemDelegate(), CheckTileDelegate) and dialog.items.itemDelegate().framed
     assert dialog.items.gridSize().width() == 210
     assert not dialog.items.item(0).icon().isNull()
@@ -475,9 +475,9 @@ with tempfile.TemporaryDirectory() as directory:
     dialog.hide()
     dialog.deleteLater()
     with patch.object(applications.Path, "home", return_value=app_home):
-        settings_dialog = main.ApplicationSelectionDialog(main.CONFIG, app_home, window, "system")
+        settings_dialog = main_window.ApplicationSelectionDialog(main_window.CONFIG, app_home, window, "system")
     assert settings_dialog.items.count() == 3
-    assert all(settings_dialog.items.item(i).data(main.Qt.UserRole)["category"] == "system" for i in range(settings_dialog.items.count()))
+    assert all(settings_dialog.items.item(i).data(main_window.Qt.UserRole)["category"] == "system" for i in range(settings_dialog.items.count()))
     settings_dialog.deleteLater()
     window.hide()
     window.deleteLater()

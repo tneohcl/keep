@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
-import version  # noqa: E402
+from keep_backup import version  # noqa: E402
 
 
 class BuildInfo(unittest.TestCase):
@@ -51,9 +51,9 @@ class BuildInfo(unittest.TestCase):
 
 class AboutDialog(unittest.TestCase):
     def test_about_shows_the_version_and_never_1970(self):
-        import main
+        from keep_backup.ui import main_window
         with patch("os.path.getmtime", return_value=0), patch.object(version, "build_info", return_value=None):
-            about = main.AboutDialog()
+            about = main_window.AboutDialog()
         text = " ".join(label.text() for label in about.findChildren(QLabel))
         self.assertIn(f"Version {version.VERSION}", text)
         self.assertNotIn("1970", text)

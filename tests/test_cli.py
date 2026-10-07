@@ -10,8 +10,8 @@ import signal
 import unittest
 from unittest.mock import patch
 
-import consumer
-from operation_lock import RepositoryLock
+from keep_backup.core import consumer
+from keep_backup.core.operation_lock import RepositoryLock
 
 
 class CLITests(unittest.TestCase):
@@ -29,10 +29,13 @@ class CLITests(unittest.TestCase):
                         KEEP_LOG_DIR=str(self.root / "logs"), BORG_PASSPHRASE="",
                         BORG_CONFIG_DIR=str(self.root / "borg-config"), BORG_CACHE_DIR=str(self.root / "cache"),
                         BORG_SECURITY_DIR=str(self.root / "security"))
+        # Run from src/: the checkout's package without site-packages (-S), and
+        # not the keep_backup.py launcher that sits at the checkout root.
+        self.src = Path(__file__).resolve().parent.parent / "src"
 
     def cli(self, *arguments):
-        return subprocess.run([sys.executable, "-S", "cli.py", "--config", str(self.config), *arguments],
-                              env=self.env, capture_output=True, text=True, timeout=30)
+        return subprocess.run([sys.executable, "-S", "-m", "keep_backup.cli", "--config", str(self.config), *arguments],
+                              env=self.env, cwd=self.src, capture_output=True, text=True, timeout=30)
 
     def test_no_site_packages_required(self):
         for command in ("status", "logs", "doctor"):
@@ -59,8 +62,8 @@ class CLITests(unittest.TestCase):
         fake.write_text("#!/usr/bin/python3\nfrom pathlib import Path\nimport time, sys, json\nif sys.argv[1] == 'info':\n print(json.dumps({'repository': {'id': 'fixture-id'}})); sys.exit(0)\nPath(" + repr(str(marker)) + ").touch()\ntime.sleep(60)\n")
         fake.chmod(0o755)
         env = dict(self.env, PATH=str(bindir) + os.pathsep + self.env.get("PATH", ""))
-        process = subprocess.Popen([sys.executable, "-S", "cli.py", "--config", str(self.config), "check", "--json"],
-                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen([sys.executable, "-S", "-m", "keep_backup.cli", "--config", str(self.config), "check", "--json"],
+                                   env=env, cwd=self.src, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.monotonic() + 10
             while not marker.exists() and time.monotonic() < deadline:
