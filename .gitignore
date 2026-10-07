@@ -8,5 +8,6 @@ __pycache__/
 /dist/
 /ui-review/
 /*.log
+/logs/
 build/
 *.egg-info/

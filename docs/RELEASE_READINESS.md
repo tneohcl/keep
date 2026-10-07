@@ -28,7 +28,7 @@ This report replaces earlier running notes. The UI refactor and maintainability 
 - Final combined Linux run: exit code 0. All 24 unit tests, consumer checks, Borg/FUSE recovery checks and installed-package checks passed.
 - Debian package `dist/keep-backup_0.9.0_all.deb` built, installed and opened from installed files; the packaged SVG decoded successfully. `dist/SHA256SUMS` records its checksum.
 - CI workflow added for future pushes/pull requests; it has not been dispatched remotely in this session.
-- `linux-validation.log` and `package-validation.log` contain detailed results.
+- `logs/linux-validation.log` and `logs/package-validation.log` (local run logs, not in git; CI keeps its own run log as a workflow artifact) contain detailed results.
 
 ## Remaining desktop acceptance
 
@@ -58,7 +58,7 @@ Each application entry-point launch now opens a private rotating session log bef
 
 Safe Restore, Advanced Restore and the Direct Restore undo copy now preserve nested symbolic links rather than following them. This fixes Electron/Chromium runtime links such as Discord SingletonLock, SingletonCookie and SingletonSocket that reference unavailable runtime targets. Direct replacement already preserved nested links. Regression fixtures check broken links, a link to a live Unix socket, an external directory link and byte-identical settings data; actual unsupported socket objects still report copy errors.
 
-Validation after this correction: all 32 unit tests, Qt smoke checks, consumer feature checks, the complete real Borg/FUSE recovery harness and installed Debian package checks passed in Debian 13 (combined run exit 0; `linux-validation.log`). Rebuilt the package and refreshed `dist/SHA256SUMS`.
+Validation after this correction: all 32 unit tests, Qt smoke checks, consumer feature checks, the complete real Borg/FUSE recovery harness and installed Debian package checks passed in Debian 13 (combined run exit 0; `logs/linux-validation.log`). Rebuilt the package and refreshed `dist/SHA256SUMS`.
 
 ## Restore results and selection usability
 
@@ -70,10 +70,10 @@ Validation: Windows and Debian GUI checks passed, including the final backup bul
 
 The unattended engine now uses explicit five-minute lock waits for access checks, prescan, create, prune and compact. Access-check and prescan deadlines include this allowance. This addresses short-lived contention without forcing unmounts or breaking locks. Long-lived mounts and broader GUI/CLI/scheduler coordination remain separate work. Added real Borg contention tests for release, exhaustion and cancellation. The distributed package version advances to 0.9.1; CLI implementation is not included in this fix.
 
-0.9.1 validation: combined Debian run exited 0 with 35 unit tests, GUI smoke checks, consumer checks, full real Borg/FUSE recovery and installed-package validation. A subsequent consumer harness run also passed with assertions requiring `--lock-wait 300` on every repository stage. Evidence: `linux-validation.log` and `lock-policy-validation.log`. No live user repository was used.
+0.9.1 validation: combined Debian run exited 0 with 35 unit tests, GUI smoke checks, consumer checks, full real Borg/FUSE recovery and installed-package validation. A subsequent consumer harness run also passed with assertions requiring `--lock-wait 300` on every repository stage. Evidence: `logs/linux-validation.log` and `logs/lock-policy-validation.log`. No live user repository was used.
 
 ## CLI foundation and automount parser (2026-09-23, working tree)
 
-Added the Qt-free CLI commands and same-user repository coordination described in CLI.md. An intermediate full Linux run passed after repairing lock ownership cleanup; its log is cli-validation.log. Subsequent shared query extraction, installed CLI probe and the reported autofs/CIFS parsing correction have not yet received a final full Linux run: Docker Desktop's Linux engine was unavailable during final verification. Do not treat the existing 0.9.2 package as containing those later changes.
+Added the Qt-free CLI commands and same-user repository coordination described in CLI.md. An intermediate full Linux run passed after repairing lock ownership cleanup; its log is `logs/cli-validation.log`. Subsequent shared query extraction, installed CLI probe and the reported autofs/CIFS parsing correction have not yet received a final full Linux run: Docker Desktop's Linux engine was unavailable during final verification. Do not treat the existing 0.9.2 package as containing those later changes.
 
 Current Windows verification: 42 tests discovered, 35 passed and 7 Linux-specific tests skipped; GUI smoke passed. Mount fixtures cover stacked autofs/CIFS, autofs-only rejection and compatibility with the exact malformed stored filesystem value without accepting local ext4. CLI-focused Linux testing before the final edits covered actual archive listing, routine/deep checks, cancellation persistence and cross-process contention. A final Linux suite/package rebuild remains required before distributing this working tree as a completed 0.9.2 release.
