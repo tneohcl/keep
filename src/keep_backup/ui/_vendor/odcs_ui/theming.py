@@ -19,7 +19,7 @@ from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
-from . import color, tokens
+from . import color, desktop, tokens
 
 # Same values and labels in every ODCS app (View > Theme or Settings).
 THEME_CHOICES = [("dark", "Dark"), ("light", "Light"), ("system", "Match System")]
@@ -58,12 +58,17 @@ def resolve_theme(choice: str, app: QApplication | None = None) -> str:
 
 
 def accent_tokens(palette: QPalette, fallback: str) -> dict[str, str]:
-    """ACCENT family from the desktop accent (QPalette.Accent, Qt 6.6+;
-    Highlight before). An invalid or pure-black role means nothing resolved,
-    so the theme's fallback accent is used instead."""
-    role = getattr(QPalette, "Accent", QPalette.Highlight)
-    qcolor = palette.color(role)
-    accent = qcolor.name() if qcolor.isValid() and qcolor != QColor(0, 0, 0) else fallback
+    """ACCENT family from the desktop accent: what the desktop itself says
+    (desktop.accent: the settings portal, KDE or LXQt settings) first, since
+    PySide6's bundled Qt can't load the system's platform-theme plugin and so
+    its palette often holds only Qt's default blue; then QPalette.Accent
+    (Qt 6.6+; Highlight before). An invalid or pure-black role means nothing
+    resolved, so the theme's fallback accent is used instead."""
+    accent = desktop.accent()
+    if not accent:
+        role = getattr(QPalette, "Accent", QPalette.Highlight)
+        qcolor = palette.color(role)
+        accent = qcolor.name() if qcolor.isValid() and qcolor != QColor(0, 0, 0) else fallback
     return {
         "ACCENT": accent,
         "ACCENT_HOVER": color.shade(accent, 0.12),
