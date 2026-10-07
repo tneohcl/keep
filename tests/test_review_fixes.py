@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-import consumer
-import recovery_test
-from keep_ui.safe_copy import restore_entries
+from keep_backup.core import consumer
+from keep_backup.core import recovery_test
+from keep_backup.ui.safe_copy import restore_entries
 
 
 class SafeRestoreTests(unittest.TestCase):

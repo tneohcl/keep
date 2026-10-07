@@ -5,7 +5,7 @@ recovery chains in ensure_mounted()/_ensure_archives_available()).
 
 Runs entirely against throwaway scratch repos in a fresh temp directory -
 never touches the real config.json, the real PASSFILE, or the real
-~/.config/borg/keys/. main.save_config is neutralized and
+~/.config/borg/keys/. main_window.save_config is neutralized and
 PASSFILE/MOUNTPOINT/REPO/DEST_STATUS/BORG_CONFIG_DIR are all redirected to
 scratch paths before anything that could write real state runs. This
 isolation is not optional: an early version of this feature's development
@@ -36,7 +36,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_DIR)
+sys.path.insert(0, os.path.join(PROJECT_DIR, "src"))
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -57,25 +57,25 @@ PASSPHRASE = "correct-horse-battery-staple"
 
 os.environ["BORG_CONFIG_DIR"] = BORG_CONFIG_DIR  # isolates key storage from the real ~/.config/borg/keys
 
-import main  # noqa: E402
+from keep_backup.ui import main_window  # noqa: E402
 
 def capture_restore_results(parent, done, failed, directory, direct=False, skipped=()):
     message = f"Restored {len(done)} item(s):\n{directory}\n" + "\n".join(done + failed)
-    method = main.QMessageBox.warning if failed else main.QMessageBox.information
+    method = main_window.QMessageBox.warning if failed else main_window.QMessageBox.information
     method(parent, "Keep", message)
 
-main.show_restore_results = capture_restore_results
+main_window.show_restore_results = capture_restore_results
 
 
 # --- Safety net: neutralize anything that could touch real state ---
-REAL_save_config = main.save_config  # kept for Phase W, which verifies this exact function's own atomicity against a scratch path
-main.save_config = lambda: None
-main.PASSFILE = PASSFILE
-main.MOUNTPOINT = MOUNTPOINT
-main.REPO = REPO
-main.DEST_STATUS = {"label": "Test Destination", "repo": REPO, "type": "other",
+REAL_save_config = main_window.save_config  # kept for Phase W, which verifies this exact function's own atomicity against a scratch path
+main_window.save_config = lambda: None
+main_window.PASSFILE = PASSFILE
+main_window.MOUNTPOINT = MOUNTPOINT
+main_window.REPO = REPO
+main_window.DEST_STATUS = {"label": "Test Destination", "repo": REPO, "type": "other",
                      "available": True, "reason": None, "mount_check": None}
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 from PySide6.QtWidgets import QApplication, QWidget, QDialog, QComboBox, QPushButton, QHBoxLayout, QMenu, QSizePolicy  # noqa: E402
 from PySide6.QtCore import QCoreApplication, QTimer  # noqa: E402
@@ -110,16 +110,16 @@ def make_dummy_window(backup_now_cb=None):
     genuinely empty repo) self.apps_picker/self.folders_picker, none of
     which a bare QWidget has on its own."""
     w = QWidget()
-    w.mount_coordinator = main.MountCoordinator()
-    w.pages = main.QTabWidget()
+    w.mount_coordinator = main_window.MountCoordinator()
+    w.pages = main_window.QTabWidget()
     w.pages.addTab(QWidget(), "Status")
     w.archive_combo = QComboBox()
     w.mounted_archive = None
-    w._offer_key_recovery = types.MethodType(main.MainWindow._offer_key_recovery, w)
-    w._offer_unlock = types.MethodType(main.MainWindow._offer_unlock, w)
-    w._apply_archive_listing = types.MethodType(main.MainWindow._apply_archive_listing, w)
-    w.apps_picker = main.ItemPicker("hint", backup_now_cb=backup_now_cb)
-    w.folders_picker = main.ItemPicker("hint", backup_now_cb=backup_now_cb)
+    w._offer_key_recovery = types.MethodType(main_window.MainWindow._offer_key_recovery, w)
+    w._offer_unlock = types.MethodType(main_window.MainWindow._offer_unlock, w)
+    w._apply_archive_listing = types.MethodType(main_window.MainWindow._apply_archive_listing, w)
+    w.apps_picker = main_window.ItemPicker("hint", backup_now_cb=backup_now_cb)
+    w.folders_picker = main_window.ItemPicker("hint", backup_now_cb=backup_now_cb)
     return w
 
 
@@ -180,38 +180,38 @@ paper_text = open(exported_paper).read()
 # ============================================================
 print("=== Phase A: non-UI helpers, real repo ===")
 
-ok, err = main.check_passphrase(REPO, PASSPHRASE)
+ok, err = main_window.check_passphrase(REPO, PASSPHRASE)
 check("check_passphrase: correct passphrase", ok, err)
 
-ok, err = main.check_passphrase(REPO, "definitely-wrong")
+ok, err = main_window.check_passphrase(REPO, "definitely-wrong")
 check("check_passphrase: wrong passphrase rejected", not ok)
 
 r = subprocess.run(["borg", "info", REPO], env=env_with("definitely-wrong"), capture_output=True, text=True)
 check("classify_borg_auth_error: real wrong_passphrase text",
-      main.classify_borg_auth_error(r.stderr) == "wrong_passphrase", r.stderr)
+      main_window.classify_borg_auth_error(r.stderr) == "wrong_passphrase", r.stderr)
 
 saved_key = remove_key()
 r = subprocess.run(["borg", "info", REPO], env=env_with(PASSPHRASE), capture_output=True, text=True)
 check("classify_borg_auth_error: real key_missing text",
-      main.classify_borg_auth_error(r.stderr) == "key_missing", r.stderr)
+      main_window.classify_borg_auth_error(r.stderr) == "key_missing", r.stderr)
 
-ok, err = main.import_key_file(REPO, exported_key)
+ok, err = main_window.import_key_file(REPO, exported_key)
 check("import_key_file: real recovery", ok, err)
-ok, _ = main.check_passphrase(REPO, PASSPHRASE)
+ok, _ = main_window.check_passphrase(REPO, PASSPHRASE)
 check("check_passphrase after import_key_file: works again", ok)
 
 # ============================================================
 print("=== Phase B: dialog internals, direct method calls ===")
 
 dummy_parent = QWidget()
-dummy_parent.mount_coordinator = main.MountCoordinator()
+dummy_parent.mount_coordinator = main_window.MountCoordinator()
 
-dlg = main.UnlockBackupDialog("Test Destination", dummy_parent)
+dlg = main_window.UnlockBackupDialog("Test Destination", dummy_parent)
 dlg.passphrase_edit.setText("")
 dlg._submit()
 check("UnlockBackupDialog: empty text does not submit", dlg.result() != QDialog.Accepted)
 
-dlg2 = main.UnlockBackupDialog("Test Destination", dummy_parent)
+dlg2 = main_window.UnlockBackupDialog("Test Destination", dummy_parent)
 dlg2.passphrase_edit.setText("hunter2")
 dlg2.chk_remember.setChecked(True)
 dlg2._submit()
@@ -220,18 +220,18 @@ check("UnlockBackupDialog: submit captures remember=True", dlg2.remember is True
 check("UnlockBackupDialog: widget cleared after submit", dlg2.passphrase_edit.text() == "")
 check("UnlockBackupDialog: accepted", dlg2.result() == QDialog.Accepted)
 
-dlg3 = main.UnlockBackupDialog("Test Destination", dummy_parent)
+dlg3 = main_window.UnlockBackupDialog("Test Destination", dummy_parent)
 dlg3.passphrase_edit.setText("leftover-text")
 dlg3.show_error("nope")
 check("UnlockBackupDialog.show_error: clears field", dlg3.passphrase_edit.text() == "")
 check("UnlockBackupDialog.show_error: shows message", dlg3.lbl_error.text() == "nope" and not dlg3.lbl_error.isHidden())
 
-krd = main.KeyRecoveryDialog("Test Destination", dummy_parent)
-krd._choose(main.KeyRecoveryDialog.PAPER_KEY)
-check("KeyRecoveryDialog: choice=PAPER_KEY", krd.choice == main.KeyRecoveryDialog.PAPER_KEY)
+krd = main_window.KeyRecoveryDialog("Test Destination", dummy_parent)
+krd._choose(main_window.KeyRecoveryDialog.PAPER_KEY)
+check("KeyRecoveryDialog: choice=PAPER_KEY", krd.choice == main_window.KeyRecoveryDialog.PAPER_KEY)
 check("KeyRecoveryDialog: accepted", krd.result() == QDialog.Accepted)
 
-krd2 = main.KeyRecoveryDialog("Test Destination", dummy_parent)
+krd2 = main_window.KeyRecoveryDialog("Test Destination", dummy_parent)
 krd2.reject()
 check("KeyRecoveryDialog: cancel rejects", krd2.result() == QDialog.Rejected)
 
@@ -239,7 +239,7 @@ check("KeyRecoveryDialog: cancel rejects", krd2.result() == QDialog.Rejected)
 # for the wizard test:
 saved_key2 = remove_key()
 
-wiz = main.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
+wiz = main_window.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
 wiz.text_edit.setPlainText(paper_text)
 wiz._start()
 # Wait on the actual observable outcome of _on_result having run, not on
@@ -249,10 +249,10 @@ wiz._start()
 pump(lambda: wiz.recovered or wiz.lbl_status.text() not in ("", "Checking key..."))
 check("PaperKeyWizardDialog: real paper-key recovery succeeds", wiz.recovered is True)
 check("PaperKeyWizardDialog: text cleared after success", wiz.text_edit.toPlainText() == "")
-ok, _ = main.check_passphrase(REPO, PASSPHRASE)
+ok, _ = main_window.check_passphrase(REPO, PASSPHRASE)
 check("check_passphrase after wizard recovery: works again", ok)
 
-wiz2 = main.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
+wiz2 = main_window.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
 wiz2.text_edit.setPlainText("this is not a paper key at all")
 wiz2._start()
 pump(lambda: wiz2.recovered or wiz2.lbl_status.text() not in ("", "Checking key..."))
@@ -261,7 +261,7 @@ check("PaperKeyWizardDialog: text NOT cleared on failure (so user can fix a typo
       wiz2.text_edit.toPlainText() == "this is not a paper key at all")
 check("PaperKeyWizardDialog: error message shown", wiz2.lbl_status.text() != "" and wiz2.lbl_status.text() != "Checking key...")
 
-wiz3 = main.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
+wiz3 = main_window.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
 wiz3.text_edit.setPlainText("leftover paste")
 wiz3.reject()
 check("PaperKeyWizardDialog: cancel clears text", wiz3.text_edit.toPlainText() == "")
@@ -269,17 +269,17 @@ check("PaperKeyWizardDialog: cancel clears text", wiz3.text_edit.toPlainText() =
 # ============================================================
 print("=== Phase C: orchestration logic (_offer_key_recovery / _offer_unlock), dialogs stubbed ===")
 
-RealKeyRecoveryDialog = main.KeyRecoveryDialog
-RealPaperKeyWizardDialog = main.PaperKeyWizardDialog
-RealUnlockBackupDialog = main.UnlockBackupDialog
-RealQFileDialog = main.QFileDialog
+RealKeyRecoveryDialog = main_window.KeyRecoveryDialog
+RealPaperKeyWizardDialog = main_window.PaperKeyWizardDialog
+RealUnlockBackupDialog = main_window.UnlockBackupDialog
+RealQFileDialog = main_window.QFileDialog
 
 dummy_self = QWidget()
-dummy_self.mount_coordinator = main.MountCoordinator()
+dummy_self.mount_coordinator = main_window.MountCoordinator()
 
 # --- C1: key_missing -> user picks Import Key File -> real import_key_file() runs ---
 remove_key()
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 
 class StubKeyRecoveryDialog_ImportFile:
@@ -299,16 +299,16 @@ class StubQFileDialog:
         return (exported_key, "")
 
 
-main.KeyRecoveryDialog = StubKeyRecoveryDialog_ImportFile
-main.QFileDialog = StubQFileDialog
+main_window.KeyRecoveryDialog = StubKeyRecoveryDialog_ImportFile
+main_window.QFileDialog = StubQFileDialog
 try:
-    result = main.MainWindow._offer_key_recovery(dummy_self, REPO)
+    result = main_window.MainWindow._offer_key_recovery(dummy_self, REPO)
 finally:
-    main.KeyRecoveryDialog = RealKeyRecoveryDialog
-    main.QFileDialog = RealQFileDialog
+    main_window.KeyRecoveryDialog = RealKeyRecoveryDialog
+    main_window.QFileDialog = RealQFileDialog
 
 check("_offer_key_recovery (import file): returns True", result is True)
-ok, _ = main.check_passphrase(REPO, PASSPHRASE)
+ok, _ = main_window.check_passphrase(REPO, PASSPHRASE)
 check("_offer_key_recovery (import file): repo actually usable afterward", ok)
 
 # --- C2: top-level dialog cancelled -> returns False, nothing touched ---
@@ -326,14 +326,14 @@ class StubKeyRecoveryDialog_Cancel:
         return QDialog.Rejected
 
 
-main.KeyRecoveryDialog = StubKeyRecoveryDialog_Cancel
+main_window.KeyRecoveryDialog = StubKeyRecoveryDialog_Cancel
 try:
-    result = main.MainWindow._offer_key_recovery(dummy_self, REPO)
+    result = main_window.MainWindow._offer_key_recovery(dummy_self, REPO)
 finally:
-    main.KeyRecoveryDialog = RealKeyRecoveryDialog
+    main_window.KeyRecoveryDialog = RealKeyRecoveryDialog
 check("_offer_key_recovery (cancelled): returns False", result is False)
 # restore the key for the next phase (it's still missing right now on purpose - re-import it)
-ok, err = main.import_key_file(REPO, exported_key)
+ok, err = main_window.import_key_file(REPO, exported_key)
 check("setup: key restored for next phase", ok, err)
 
 # --- C3: key_missing -> paper key path (wizard stubbed, since its own logic is proven in Phase B) ---
@@ -359,20 +359,20 @@ class StubKeyRecoveryDialog_Paper:
         return QDialog.Accepted
 
 
-main.KeyRecoveryDialog = StubKeyRecoveryDialog_Paper
-main.PaperKeyWizardDialog = StubPaperKeyWizardDialog
+main_window.KeyRecoveryDialog = StubKeyRecoveryDialog_Paper
+main_window.PaperKeyWizardDialog = StubPaperKeyWizardDialog
 try:
-    result = main.MainWindow._offer_key_recovery(dummy_self, REPO)
+    result = main_window.MainWindow._offer_key_recovery(dummy_self, REPO)
 finally:
-    main.KeyRecoveryDialog = RealKeyRecoveryDialog
-    main.PaperKeyWizardDialog = RealPaperKeyWizardDialog
+    main_window.KeyRecoveryDialog = RealKeyRecoveryDialog
+    main_window.PaperKeyWizardDialog = RealPaperKeyWizardDialog
 check("_offer_key_recovery (paper key stub): propagates wizard.recovered", result is True)
 # the stub didn't really do the import - restore the key for real for the next phase
-ok, err = main.import_key_file(REPO, exported_key)
+ok, err = main_window.import_key_file(REPO, exported_key)
 check("setup: key restored after stub test", ok, err)
 
 # --- C4: _offer_unlock - wrong guess then correct guess, remember=True ---
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 with open(PASSFILE, "w") as f:
     f.write("stale-wrong-passphrase")
 
@@ -393,27 +393,27 @@ class StubUnlockDialog:
         self.errors.append(msg)
 
 
-main.UnlockBackupDialog = StubUnlockDialog
+main_window.UnlockBackupDialog = StubUnlockDialog
 try:
-    result = main.MainWindow._offer_unlock(dummy_self, REPO)
+    result = main_window.MainWindow._offer_unlock(dummy_self, REPO)
 finally:
-    main.UnlockBackupDialog = RealUnlockBackupDialog
+    main_window.UnlockBackupDialog = RealUnlockBackupDialog
 
 check("_offer_unlock: eventually returns True", result is True)
 check("_offer_unlock: session override set to correct passphrase",
-      main._session_passphrase_override == PASSPHRASE)
+      main_window._session_passphrase_override == PASSPHRASE)
 check("_offer_unlock: remember=True persisted via save_passphrase_atomic",
       open(PASSFILE).read() == PASSPHRASE)
 check("_offer_unlock: PASSFILE perms are 0600 (atomic helper, not raw write)",
       oct(os.stat(PASSFILE).st_mode)[-3:] == "600")
-audit_log = open(main.PASSPHRASE_AUDIT_LOG).read()
+audit_log = open(main_window.PASSPHRASE_AUDIT_LOG).read()
 check("save_passphrase_atomic: audit log has an entry for this write",
       "reason=user_remembered_unlock" in audit_log and "Test Destination" in audit_log)
 check("save_passphrase_atomic: audit log never contains the passphrase itself",
       PASSPHRASE not in audit_log)
 
 # --- C5: _offer_unlock - user cancels immediately ---
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 
 class StubUnlockDialog_Cancel:
@@ -427,20 +427,20 @@ class StubUnlockDialog_Cancel:
         pass
 
 
-main.UnlockBackupDialog = StubUnlockDialog_Cancel
+main_window.UnlockBackupDialog = StubUnlockDialog_Cancel
 try:
-    result = main.MainWindow._offer_unlock(dummy_self, REPO)
+    result = main_window.MainWindow._offer_unlock(dummy_self, REPO)
 finally:
-    main.UnlockBackupDialog = RealUnlockBackupDialog
+    main_window.UnlockBackupDialog = RealUnlockBackupDialog
 check("_offer_unlock (cancelled): returns False", result is False)
-check("_offer_unlock (cancelled): override left untouched", main._session_passphrase_override is None)
+check("_offer_unlock (cancelled): override left untouched", main_window._session_passphrase_override is None)
 
 # ============================================================
 print("=== Phase D: _attempt_mount, the real production command ===")
 
-main._session_passphrase_override = PASSPHRASE
+main_window._session_passphrase_override = PASSPHRASE
 os.makedirs(MOUNTPOINT, exist_ok=True)
-ok, stderr = main.MainWindow._attempt_mount(dummy_self, "test1")
+ok, stderr = main_window.MainWindow._attempt_mount(dummy_self, "test1")
 check("_attempt_mount: real FUSE mount succeeds", ok, stderr)
 mounted_src = os.path.join(MOUNTPOINT, SRC.lstrip("/"), "hello.txt")
 check("_attempt_mount: mounted content matches original",
@@ -457,10 +457,10 @@ print("    fresh HOME sim: no PASSFILE, no local key, only the repo + paper key 
 # not raise just because PASSFILE doesn't exist.
 NEVER_CREATED_PASSFILE = f"{SCRATCH}/passfile_that_does_not_exist"
 assert not os.path.exists(NEVER_CREATED_PASSFILE)
-main.PASSFILE = NEVER_CREATED_PASSFILE
-main._session_passphrase_override = None
+main_window.PASSFILE = NEVER_CREATED_PASSFILE
+main_window._session_passphrase_override = None
 try:
-    env = main.borg_env()
+    env = main_window.borg_env()
     check("borg_env(): tolerates missing PASSFILE without raising", env.get("BORG_PASSPHRASE") == "")
 except FileNotFoundError:
     check("borg_env(): tolerates missing PASSFILE without raising", False, "raised FileNotFoundError")
@@ -497,26 +497,26 @@ fresh_machine_config_dir = f"{SCRATCH}/borgconfig_fresh_machine"
 os.environ["BORG_CONFIG_DIR"] = fresh_machine_config_dir
 fresh_machine_passfile = f"{SCRATCH}/fresh_machine_passphrase"
 assert not os.path.exists(fresh_machine_passfile)
-main.PASSFILE = fresh_machine_passfile
-main.REPO = FRESH_REPO
-main.MOUNTPOINT = f"{SCRATCH}/fresh_mount"
-main.DEST_STATUS = {"label": "Recovered NAS", "repo": FRESH_REPO, "type": "other",
+main_window.PASSFILE = fresh_machine_passfile
+main_window.REPO = FRESH_REPO
+main_window.MOUNTPOINT = f"{SCRATCH}/fresh_mount"
+main_window.DEST_STATUS = {"label": "Recovered NAS", "repo": FRESH_REPO, "type": "other",
                      "available": True, "reason": None, "mount_check": None}
-main._session_passphrase_override = None
-os.makedirs(main.MOUNTPOINT, exist_ok=True)
+main_window._session_passphrase_override = None
+os.makedirs(main_window.MOUNTPOINT, exist_ok=True)
 
 # Step 1: Browse. First mount attempt on a machine with no key at all -
 # must not crash, must come back as a real, classifiable borg error.
-ok, stderr = main.MainWindow._attempt_mount(dummy_self, "test1")
+ok, stderr = main_window.MainWindow._attempt_mount(dummy_self, "test1")
 check("Phase E: first mount attempt fails (as expected)", ok is False)
 check("Phase E: classifies as key_missing (borg actually ran, didn't crash/hang)",
-      main.classify_borg_auth_error(stderr) == "key_missing", stderr)
+      main_window.classify_borg_auth_error(stderr) == "key_missing", stderr)
 check("Phase E: no PASSFILE was created just by attempting to mount",
       not os.path.exists(fresh_machine_passfile))
 
 # Step 2: "Backup Key Not Found" -> Recover from Paper Key. Real wizard,
 # real worker thread, exactly as a user would drive it - not stubbed.
-wizard = main.PaperKeyWizardDialog(FRESH_REPO, "Recovered NAS", dummy_parent)
+wizard = main_window.PaperKeyWizardDialog(FRESH_REPO, "Recovered NAS", dummy_parent)
 wizard.text_edit.setPlainText(fresh_paper_text)
 wizard._start()
 pump(lambda: wizard.recovered or wizard.lbl_status.text() not in ("", "Checking key..."))
@@ -525,35 +525,35 @@ check("Phase E: paper-key wizard recovers the key on the 'fresh machine'", wizar
 # Step 3: retry mount - key exists now, but still no correct passphrase
 # anywhere (PASSFILE still doesn't exist) - must come back as
 # wrong_passphrase, not crash, not key_missing again.
-ok, stderr = main.MainWindow._attempt_mount(dummy_self, "test1")
+ok, stderr = main_window.MainWindow._attempt_mount(dummy_self, "test1")
 check("Phase E: retry after key recovery fails (still no passphrase)", ok is False)
 check("Phase E: now classifies as wrong_passphrase (not key_missing, not a crash)",
-      main.classify_borg_auth_error(stderr) == "wrong_passphrase", stderr)
+      main_window.classify_borg_auth_error(stderr) == "wrong_passphrase", stderr)
 
 # Step 4: "Unlock Backup" with the known passphrase (from the paper-key
 # saved note, entered by the user - Remember left UNCHECKED, simulating
 # the recommended default for a one-off disaster-recovery session).
-unlock_dlg = main.UnlockBackupDialog("Recovered NAS", dummy_parent)
+unlock_dlg = main_window.UnlockBackupDialog("Recovered NAS", dummy_parent)
 unlock_dlg.passphrase_edit.setText(FRESH_PASSPHRASE)
 unlock_dlg.chk_remember.setChecked(False)
 unlock_dlg._submit()
 check("Phase E: unlock dialog captured the passphrase", unlock_dlg.passphrase == FRESH_PASSPHRASE)
-ok, _ = main.check_passphrase(FRESH_REPO, unlock_dlg.passphrase)
+ok, _ = main_window.check_passphrase(FRESH_REPO, unlock_dlg.passphrase)
 check("Phase E: check_passphrase confirms it's correct", ok)
-main._session_passphrase_override = unlock_dlg.passphrase
+main_window._session_passphrase_override = unlock_dlg.passphrase
 unlock_dlg.passphrase = None
 
 # Step 5: retry mount - should finally succeed.
-ok, stderr = main.MainWindow._attempt_mount(dummy_self, "test1")
+ok, stderr = main_window.MainWindow._attempt_mount(dummy_self, "test1")
 check("Phase E: final retry mounts successfully", ok, stderr)
-recovered_file = os.path.join(main.MOUNTPOINT, FRESH_SRC.lstrip("/"), "data.txt")
+recovered_file = os.path.join(main_window.MOUNTPOINT, FRESH_SRC.lstrip("/"), "data.txt")
 check("Phase E: mounted content is the real archived data",
       os.path.isfile(recovered_file) and open(recovered_file).read() == "disaster recovery works\n",
       f"expected file at {recovered_file}")
 check("Phase E: end-to-end, PASSFILE was NEVER created on disk (Remember was off)",
       not os.path.exists(fresh_machine_passfile))
 
-r = subprocess.run(["fusermount", "-u", main.MOUNTPOINT], capture_output=True, text=True)
+r = subprocess.run(["fusermount", "-u", main_window.MOUNTPOINT], capture_output=True, text=True)
 check("Phase E cleanup: unmount", r.returncode == 0, r.stderr)
 if r.returncode == 0:
     dummy_self._browse_operation_lock.release()
@@ -563,7 +563,7 @@ print("=== Phase F: paper-key wizard worker lifecycle safety ===")
 
 os.environ["BORG_CONFIG_DIR"] = f"{SCRATCH}/borgconfig_phase_f"
 
-wiz_f = main.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
+wiz_f = main_window.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
 wiz_f.text_edit.setPlainText(paper_text)
 wiz_f._start()
 
@@ -587,7 +587,7 @@ check("Phase F: import itself still succeeded (lifecycle guard didn't break it)"
 # reject() should work normally now nothing is running - use a fresh dialog
 # in the "worker finished but not auto-accepted" state (garbage input) so
 # reject() is actually exercised, not skipped because it already accepted.
-wiz_f2 = main.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
+wiz_f2 = main_window.PaperKeyWizardDialog(REPO, "Test Destination", dummy_parent)
 wiz_f2.text_edit.setPlainText("garbage, not a real paper key")
 wiz_f2._start()
 pump(lambda: wiz_f2.recovered or wiz_f2.lbl_status.text() not in ("", "Checking key..."))
@@ -599,18 +599,18 @@ check("Phase F: reject() succeeds once idle (dialog actually rejected)", wiz_f2.
 # ============================================================
 print("=== Phase G: audit log write is best-effort, must not block a successful credential write ===")
 
-PASSPHRASE_AUDIT_LOG_ORIGINAL = main.PASSPHRASE_AUDIT_LOG
+PASSPHRASE_AUDIT_LOG_ORIGINAL = main_window.PASSPHRASE_AUDIT_LOG
 blocking_file = f"{SCRATCH}/not_a_directory"
 with open(blocking_file, "w") as f:
     f.write("a plain file standing where the audit log's parent dir should be")
-main.PASSPHRASE_AUDIT_LOG = f"{blocking_file}/audit.log"  # open() under this will raise NotADirectoryError (an OSError)
+main_window.PASSPHRASE_AUDIT_LOG = f"{blocking_file}/audit.log"  # open() under this will raise NotADirectoryError (an OSError)
 
 phase_g_passfile = f"{SCRATCH}/phase_g_passphrase"
-main.PASSFILE = phase_g_passfile
+main_window.PASSFILE = phase_g_passfile
 
 raised_detail = None
 try:
-    main.save_passphrase_atomic("phase-g-test-passphrase", "test_reason", "Phase G Destination")
+    main_window.save_passphrase_atomic("phase-g-test-passphrase", "test_reason", "Phase G Destination")
 except Exception as e:
     raised_detail = repr(e)
 
@@ -620,7 +620,7 @@ check("save_passphrase_atomic: credential write still succeeded despite audit fa
 check("save_passphrase_atomic: PASSFILE perms still 0600",
       oct(os.stat(phase_g_passfile).st_mode)[-3:] == "600")
 
-main.PASSPHRASE_AUDIT_LOG = PASSPHRASE_AUDIT_LOG_ORIGINAL
+main_window.PASSPHRASE_AUDIT_LOG = PASSPHRASE_AUDIT_LOG_ORIGINAL
 
 # ============================================================
 print("=== Phase H: archive list going empty from a swallowed auth error ===")
@@ -648,28 +648,28 @@ h_paper_text = open(h_paper_export).read()
 # switch to a "fresh machine" config dir - no local key for H_REPO at all
 h_fresh_config_dir = f"{SCRATCH}/borgconfig_h_fresh"
 os.environ["BORG_CONFIG_DIR"] = h_fresh_config_dir
-main.REPO = H_REPO
-main.PASSFILE = f"{SCRATCH}/h_passphrase_never_created"
-main._session_passphrase_override = None
-main.DEST_STATUS = {"label": "Phase H Destination", "repo": H_REPO, "type": "other",
+main_window.REPO = H_REPO
+main_window.PASSFILE = f"{SCRATCH}/h_passphrase_never_created"
+main_window._session_passphrase_override = None
+main_window.DEST_STATUS = {"label": "Phase H Destination", "repo": H_REPO, "type": "other",
                      "available": True, "reason": None, "mount_check": None}
 
 # H1/H2: confirm the reported bug is real, and that the checked variant fixes it
-listing_unchecked = main.run_borg_json(["list", "--json", H_REPO])
+listing_unchecked = main_window.run_borg_json(["list", "--json", H_REPO])
 check("Phase H1: run_borg_json() really does swallow key_missing into bare None (confirms the reported bug)",
       listing_unchecked is None)
-listing_checked, stderr_checked = main.run_borg_json_checked(["list", "--json", H_REPO])
+listing_checked, stderr_checked = main_window.run_borg_json_checked(["list", "--json", H_REPO])
 check("Phase H2: run_borg_json_checked() preserves the real stderr",
       listing_checked is None and stderr_checked)
 check("Phase H2: that stderr classifies as key_missing",
-      main.classify_borg_auth_error(stderr_checked) == "key_missing", stderr_checked)
+      main_window.classify_borg_auth_error(stderr_checked) == "key_missing", stderr_checked)
 
 dummy_window = make_dummy_window()
 check("Phase H: archive_combo starts empty", dummy_window.archive_combo.count() == 0)
 
 # H3: with the same paper-key recovery already proven for real in Phase B/E,
 # stub only the picker dialogs (as Phase C does) to drive _ensure_archives_available()
-RealKeyRecoveryDialog2 = main.KeyRecoveryDialog
+RealKeyRecoveryDialog2 = main_window.KeyRecoveryDialog
 
 
 class StubKeyRecoveryDialog_PaperH:
@@ -683,7 +683,7 @@ class StubKeyRecoveryDialog_PaperH:
         return QDialog.Accepted
 
 
-main.KeyRecoveryDialog = StubKeyRecoveryDialog_PaperH
+main_window.KeyRecoveryDialog = StubKeyRecoveryDialog_PaperH
 try:
     # real wizard this time, not stubbed - proves the actual paper-key
     # import runs as part of this new path, not just that it's wired up.
@@ -691,7 +691,7 @@ try:
     # polling instead of a real modal loop - calling the REAL exec() here
     # would open a second, genuinely blocking event loop with nothing left
     # to click, since accept()/reject() would already have been decided.
-    wizard_h = main.PaperKeyWizardDialog(H_REPO, "Phase H Destination", dummy_parent)
+    wizard_h = main_window.PaperKeyWizardDialog(H_REPO, "Phase H Destination", dummy_parent)
     wizard_h.text_edit.setPlainText(h_paper_text)
 
     def fake_exec():
@@ -700,7 +700,7 @@ try:
         return QDialog.Accepted if wizard_h.recovered else QDialog.Rejected
 
     wizard_h.exec = fake_exec
-    main.PaperKeyWizardDialog = lambda repo, label, parent=None: wizard_h
+    main_window.PaperKeyWizardDialog = lambda repo, label, parent=None: wizard_h
 
     # give it the correct passphrase for the RETRY after key recovery, so
     # this phase stays focused on the key_missing path specifically -
@@ -708,14 +708,14 @@ try:
     # PASSFILE was never set up), which would try to show a REAL, un-stubbed
     # UnlockBackupDialog.exec() and hang forever under offscreen with
     # nothing to drive it. That full chain is already covered by Phase E.
-    main.PASSFILE = f"{SCRATCH}/h_passphrase_for_retry"
-    with open(main.PASSFILE, "w") as f:
+    main_window.PASSFILE = f"{SCRATCH}/h_passphrase_for_retry"
+    with open(main_window.PASSFILE, "w") as f:
         f.write(H_PASSPHRASE)
 
-    result = main.MainWindow._ensure_archives_available(dummy_window)
+    result = main_window.MainWindow._ensure_archives_available(dummy_window)
 finally:
-    main.KeyRecoveryDialog = RealKeyRecoveryDialog2
-    main.PaperKeyWizardDialog = RealPaperKeyWizardDialog
+    main_window.KeyRecoveryDialog = RealKeyRecoveryDialog2
+    main_window.PaperKeyWizardDialog = RealPaperKeyWizardDialog
 
 check("Phase H3: _ensure_archives_available() recovers and returns True", result is True)
 check("Phase H3: archive_combo now actually has the real archive listed",
@@ -738,17 +738,17 @@ class StubKeyRecoveryDialog_CancelH:
         return QDialog.Rejected
 
 
-main.KeyRecoveryDialog = StubKeyRecoveryDialog_CancelH
+main_window.KeyRecoveryDialog = StubKeyRecoveryDialog_CancelH
 try:
-    result2 = main.MainWindow._ensure_archives_available(dummy_window2)
+    result2 = main_window.MainWindow._ensure_archives_available(dummy_window2)
 finally:
-    main.KeyRecoveryDialog = RealKeyRecoveryDialog2
+    main_window.KeyRecoveryDialog = RealKeyRecoveryDialog2
 check("Phase H4: cancelling recovery returns False", result2 is False)
 check("Phase H4: archive_combo stays empty after a cancelled recovery", dummy_window2.archive_combo.count() == 0)
 
 # H5: a non-auth failure (repo just doesn't exist here) must NOT attempt any
 # recovery dialog at all - classify_borg_auth_error returns None for it
-main.REPO = f"{SCRATCH}/nonexistent_repo_path"
+main_window.REPO = f"{SCRATCH}/nonexistent_repo_path"
 dummy_window3 = make_dummy_window()
 
 
@@ -757,17 +757,17 @@ class ShouldNotBeConstructed:
         raise AssertionError("a recovery dialog was constructed for a non-auth failure")
 
 
-main.KeyRecoveryDialog = ShouldNotBeConstructed
-main.UnlockBackupDialog = ShouldNotBeConstructed
+main_window.KeyRecoveryDialog = ShouldNotBeConstructed
+main_window.UnlockBackupDialog = ShouldNotBeConstructed
 try:
-    result3 = main.MainWindow._ensure_archives_available(dummy_window3)
+    result3 = main_window.MainWindow._ensure_archives_available(dummy_window3)
     no_dialog_attempted = True
 except AssertionError:
     result3 = None
     no_dialog_attempted = False
 finally:
-    main.KeyRecoveryDialog = RealKeyRecoveryDialog2
-    main.UnlockBackupDialog = RealUnlockBackupDialog
+    main_window.KeyRecoveryDialog = RealKeyRecoveryDialog2
+    main_window.UnlockBackupDialog = RealUnlockBackupDialog
 
 check("Phase H5: non-auth failure never attempts a recovery dialog", no_dialog_attempted)
 check("Phase H5: non-auth failure returns False cleanly", result3 is False)
@@ -782,12 +782,12 @@ I_PASSPHRASE = "phase-i-passphrase-33"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", I_REPO], env=env_with(I_PASSPHRASE), capture_output=True, text=True)
 check("Phase I setup: init a genuinely empty repo (no archives created)", r.returncode == 0, r.stderr)
 
-main.REPO = I_REPO
-main.PASSFILE = f"{SCRATCH}/i_passphrase"
-with open(main.PASSFILE, "w") as f:
+main_window.REPO = I_REPO
+main_window.PASSFILE = f"{SCRATCH}/i_passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write(I_PASSPHRASE)
-main._session_passphrase_override = None
-main.DEST_STATUS = {"label": "Phase I Destination", "repo": I_REPO, "type": "other",
+main_window._session_passphrase_override = None
+main_window.DEST_STATUS = {"label": "Phase I Destination", "repo": I_REPO, "type": "other",
                      "available": True, "reason": None, "mount_check": None}
 
 backup_calls = {"count": 0}
@@ -797,7 +797,7 @@ check("Phase I: placeholder starts in the generic startup state",
       dummy_window_i.apps_picker.ph_label.text() == "Choose a backup to see its contents." and
       dummy_window_i.apps_picker.btn_browse.text() == "Open backup…")
 
-result_i = main.MainWindow._ensure_archives_available(dummy_window_i)
+result_i = main_window.MainWindow._ensure_archives_available(dummy_window_i)
 check("Phase I: a genuinely empty (but reachable) repo returns True", result_i is True)
 check("Phase I: archive_combo still has zero items (nothing to actually browse)",
       dummy_window_i.archive_combo.count() == 0)
@@ -840,7 +840,7 @@ os.makedirs(archived_dir)
 with open(f"{archived_dir}/from_archive.txt", "w") as f:
     f.write("this is the only thing that should end up at the live path\n")
 
-main.ItemPicker._replace_live_path(dummy_parent, archived_dir, live_symlink)
+main_window.ItemPicker._replace_live_path(dummy_parent, archived_dir, live_symlink)
 
 check("Phase J1: live path is no longer a symlink after replacement",
       not os.path.islink(live_symlink))
@@ -864,7 +864,7 @@ os.makedirs(live_plain)
 with open(f"{live_plain}/old_live_file.txt", "w") as f:
     f.write("must be gone after replacement\n")
 
-main.ItemPicker._replace_live_path(dummy_parent, archived_symlink, live_plain)
+main_window.ItemPicker._replace_live_path(dummy_parent, archived_symlink, live_plain)
 
 check("Phase J2: live path is now itself a symlink (archived symlink preserved, not dereferenced)",
       os.path.islink(live_plain))
@@ -878,7 +878,7 @@ with open(archived_file, "w") as f:
 live_file = f"{j_dir}/live_file.txt"
 with open(live_file, "w") as f:
     f.write("old content\n")
-main.ItemPicker._replace_live_path(dummy_parent, archived_file, live_file)
+main_window.ItemPicker._replace_live_path(dummy_parent, archived_file, live_file)
 check("Phase J3: plain file replacement still works", open(live_file).read() == "new content\n")
 
 # --- K: restore methods must abort, not silently do nothing/report 0, when
@@ -886,7 +886,7 @@ check("Phase J3: plain file replacement still works", open(live_file).read() == 
 # backup/delete holding the lock at that exact moment) ---
 print("=== Phase K: restore aborts explicitly when ensure_mounted_cb() reports failure ===")
 
-RealQMessageBox = main.QMessageBox
+RealQMessageBox = main_window.QMessageBox
 
 
 class StubQMessageBox:
@@ -921,19 +921,19 @@ class FakeCheckedItem:
     restore methods, for exactly these three roles."""
 
     def data(self, role):
-        if role == main.Qt.UserRole:
+        if role == main_window.Qt.UserRole:
             return [("some/rel/path", "/fake/live/target")]
-        if role == main.Qt.UserRole + 1:
+        if role == main_window.Qt.UserRole + 1:
             return "Fake Identity"
-        if role == main.Qt.UserRole + 2:
+        if role == main_window.Qt.UserRole + 2:
             return []
         return None
 
 
-main.QMessageBox = StubQMessageBox
+main_window.QMessageBox = StubQMessageBox
 try:
     StubQMessageBox.calls = []
-    picker_k1 = main.ItemPicker("hint", ensure_mounted_cb=lambda: False)
+    picker_k1 = main_window.ItemPicker("hint", ensure_mounted_cb=lambda: False)
     picker_k1._checked_items = lambda: [FakeCheckedItem()]
     picker_k1.restore_checked_safe()
     # copy_item() is module-level now (see Phase VV), not an instance
@@ -951,7 +951,7 @@ try:
 
     StubQMessageBox.calls = []
     replace_calls = []
-    picker_k2 = main.ItemPicker("hint", ensure_mounted_cb=lambda: False)
+    picker_k2 = main_window.ItemPicker("hint", ensure_mounted_cb=lambda: False)
     picker_k2._checked_items = lambda: [FakeCheckedItem()]
     picker_k2._replace_live_path = lambda src, dest: replace_calls.append((src, dest))
     picker_k2.restore_checked_direct()
@@ -960,7 +960,7 @@ try:
     check("Phase K2: Direct Restore shows a warning instead of silently doing nothing",
           any(c[0] == "warning" for c in StubQMessageBox.calls))
 finally:
-    main.QMessageBox = RealQMessageBox
+    main_window.QMessageBox = RealQMessageBox
 
 # ============================================================
 print("=== Phase L: Change Destination credential-transaction ordering (BLOCKER fix) ===")
@@ -970,19 +970,19 @@ os.makedirs(l_dir)
 new_repo_folder = f"{l_dir}/brand_new_repo"
 os.makedirs(new_repo_folder)  # exists but empty - looks_like_borg_repo() is False, triggers new-repo-init
 
-main.PASSFILE = f"{SCRATCH}/phase_l_passphrase"
-if os.path.exists(main.PASSFILE):
-    os.remove(main.PASSFILE)
-main.CONFIG["destination"] = {"type": "other", "label": "Old Destination", "repo": f"{SCRATCH}/phase_l_old_repo"}
-main._session_passphrase_override = "leftover-session-passphrase-from-old-repo"
+main_window.PASSFILE = f"{SCRATCH}/phase_l_passphrase"
+if os.path.exists(main_window.PASSFILE):
+    os.remove(main_window.PASSFILE)
+main_window.CONFIG["destination"] = {"type": "other", "label": "Old Destination", "repo": f"{SCRATCH}/phase_l_old_repo"}
+main_window._session_passphrase_override = "leftover-session-passphrase-from-old-repo"
 # This phase drives a REAL successful new-repo-init, which writes a real
 # paper-key export BEFORE KeyExportDialog is even constructed - stubbing
 # that dialog (ProbeKeyExportDialog below) does NOT stop the export itself
 # from running. Must redirect this too, or it lands in the real $HOME -
 # confirmed happening for real (found by the user, twice) before this
 # redirect existed.
-RealNewRepoKeyExportPath_L = main.NEW_REPO_KEY_EXPORT_PATH
-main.NEW_REPO_KEY_EXPORT_PATH = f"{l_dir}/key_export.txt"
+RealNewRepoKeyExportPath_L = main_window.NEW_REPO_KEY_EXPORT_PATH
+main_window.NEW_REPO_KEY_EXPORT_PATH = f"{l_dir}/key_export.txt"
 
 
 class StubDestinationTypeDialog:
@@ -1023,30 +1023,30 @@ class ProbeKeyExportDialog:
     def __init__(self, passphrase, export_path, parent=None):
         ProbeKeyExportDialog.captured["passphrase_arg"] = passphrase
         ProbeKeyExportDialog.captured["passfile_content"] = (
-            open(main.PASSFILE).read() if os.path.exists(main.PASSFILE) else None
+            open(main_window.PASSFILE).read() if os.path.exists(main_window.PASSFILE) else None
         )
-        ProbeKeyExportDialog.captured["config_repo"] = main.CONFIG["destination"]["repo"]
-        ProbeKeyExportDialog.captured["module_REPO"] = main.REPO
-        ProbeKeyExportDialog.captured["session_override_cleared"] = main._session_passphrase_override is None
+        ProbeKeyExportDialog.captured["config_repo"] = main_window.CONFIG["destination"]["repo"]
+        ProbeKeyExportDialog.captured["module_REPO"] = main_window.REPO
+        ProbeKeyExportDialog.captured["session_override_cleared"] = main_window._session_passphrase_override is None
 
     def exec(self):
         return None
 
 
-RealDestinationTypeDialog = main.DestinationTypeDialog
-RealQFileDialog_outer = main.QFileDialog
-RealQInputDialog = main.QInputDialog
-RealKeyExportDialog = main.KeyExportDialog
+RealDestinationTypeDialog = main_window.DestinationTypeDialog
+RealQFileDialog_outer = main_window.QFileDialog
+RealQInputDialog = main_window.QInputDialog
+RealKeyExportDialog = main_window.KeyExportDialog
 
-main.DestinationTypeDialog = StubDestinationTypeDialog
-main.QFileDialog = StubQFileDialog_Dest
-main.QInputDialog = StubQInputDialog
-main.QMessageBox = StubQMessageBox
-main.KeyExportDialog = ProbeKeyExportDialog
-main.save_config = lambda: None  # already the case, kept explicit here given the stakes
+main_window.DestinationTypeDialog = StubDestinationTypeDialog
+main_window.QFileDialog = StubQFileDialog_Dest
+main_window.QInputDialog = StubQInputDialog
+main_window.QMessageBox = StubQMessageBox
+main_window.KeyExportDialog = ProbeKeyExportDialog
+main_window.save_config = lambda: None  # already the case, kept explicit here given the stakes
 
 dummy_destchange = QWidget()
-dummy_destchange.mount_coordinator = main.MountCoordinator()
+dummy_destchange.mount_coordinator = main_window.MountCoordinator()
 dummy_destchange._repo_op_running = False
 dummy_destchange.mounted = False
 dummy_destchange._unmount = lambda: True  # _unmount()'s contract: True = nothing mounted/safe to proceed
@@ -1054,14 +1054,14 @@ dummy_destchange.refresh_status = lambda *a, **k: None
 dummy_destchange._stop_status_query = lambda: None  # no real status_worker on a dummy - safe no-op
 
 try:
-    main.MainWindow.change_backup_destination(dummy_destchange)
+    main_window.MainWindow.change_backup_destination(dummy_destchange)
 finally:
-    main.DestinationTypeDialog = RealDestinationTypeDialog
-    main.QFileDialog = RealQFileDialog_outer
-    main.QInputDialog = RealQInputDialog
-    main.QMessageBox = RealQMessageBox
-    main.KeyExportDialog = RealKeyExportDialog
-    main.NEW_REPO_KEY_EXPORT_PATH = RealNewRepoKeyExportPath_L
+    main_window.DestinationTypeDialog = RealDestinationTypeDialog
+    main_window.QFileDialog = RealQFileDialog_outer
+    main_window.QInputDialog = RealQInputDialog
+    main_window.QMessageBox = RealQMessageBox
+    main_window.KeyExportDialog = RealKeyExportDialog
+    main_window.NEW_REPO_KEY_EXPORT_PATH = RealNewRepoKeyExportPath_L
 
 check("Phase L: the real paper-key export landed in scratch, not the real $HOME (regression check for a real leak this caused twice before the redirect existed)",
       os.path.exists(f"{l_dir}/key_export.txt"))
@@ -1075,7 +1075,7 @@ check("Phase L: the module-level REPO was already refreshed to the new repo too"
       ProbeKeyExportDialog.captured.get("module_REPO") == new_repo_folder)
 check("Phase L: the old repo's session passphrase override was cleared before the switch",
       ProbeKeyExportDialog.captured.get("session_override_cleared") is True)
-ok, _ = main.check_passphrase(new_repo_folder, ProbeKeyExportDialog.captured.get("passphrase_arg", ""))
+ok, _ = main_window.check_passphrase(new_repo_folder, ProbeKeyExportDialog.captured.get("passphrase_arg", ""))
 check("Phase L: the new repo is genuinely usable with the passphrase that was committed", ok)
 
 # repokey, not keyfile: the key must live inside the new repo itself, so a
@@ -1100,7 +1100,7 @@ print("=== Phase M: worker exception-safety (whole-app sweep) ===")
 m_events = {"finished": []}
 
 
-class BrokenDeleteWorker(main.DeleteWorker):
+class BrokenDeleteWorker(main_window.DeleteWorker):
     """Same class, but Popen is replaced with something that raises -
     simulates `borg` genuinely being missing/unrunnable, which the old
     code had no try/except around at all."""
@@ -1110,7 +1110,7 @@ class BrokenDeleteWorker(main.DeleteWorker):
         original_popen = _sp.Popen
         _sp.Popen = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("borg: command not found (simulated)"))
         try:
-            main.DeleteWorker.run(self)
+            main_window.DeleteWorker.run(self)
         finally:
             _sp.Popen = original_popen
 
@@ -1129,27 +1129,27 @@ print("    (idle-unmount -> Backup Now/delete/destination-switch could otherwise
 print("    describing archive A visible and tappable while the combo had already moved to B)")
 
 os.environ["BORG_CONFIG_DIR"] = BORG_CONFIG_DIR  # back to the ORIGINAL - later phases redirected this repeatedly
-main.REPO = REPO
-main.MOUNTPOINT = f"{SCRATCH}/phase_n_mount"
-main.PASSFILE = PASSFILE
-main._session_passphrase_override = PASSPHRASE
-os.makedirs(main.MOUNTPOINT, exist_ok=True)
+main_window.REPO = REPO
+main_window.MOUNTPOINT = f"{SCRATCH}/phase_n_mount"
+main_window.PASSFILE = PASSFILE
+main_window._session_passphrase_override = PASSPHRASE
+os.makedirs(main_window.MOUNTPOINT, exist_ok=True)
 
 dummy_n = QWidget()
-dummy_n.mount_coordinator = main.MountCoordinator()
+dummy_n.mount_coordinator = main_window.MountCoordinator()
 dummy_n.unmount_timer = QTimer()
-dummy_n.apps_picker = main.ItemPicker("hint")
-dummy_n.folders_picker = main.ItemPicker("hint")
+dummy_n.apps_picker = main_window.ItemPicker("hint")
+dummy_n.folders_picker = main_window.ItemPicker("hint")
 # _unmount() now also resets the Advanced tab's raw tree (Phase VV) - a
 # minimal real tree/model pair, same as MainWindow._build_ui()'s own
 # self.tree.setModel(self.fs_model), so _unmount() can run to completion
 # on this lightweight dummy instead of crashing on a missing attribute
-dummy_n.fs_model = main.QFileSystemModel()
-dummy_n.tree = main.QTreeView()
+dummy_n.fs_model = main_window.QFileSystemModel()
+dummy_n.tree = main_window.QTreeView()
 dummy_n.tree.setModel(dummy_n.fs_model)
-dummy_n._unmount = types.MethodType(main.MainWindow._unmount, dummy_n)
+dummy_n._unmount = types.MethodType(main_window.MainWindow._unmount, dummy_n)
 
-mount_ok, mount_stderr = main.MainWindow._attempt_mount(dummy_n, "test1")
+mount_ok, mount_stderr = main_window.MainWindow._attempt_mount(dummy_n, "test1")
 check("Phase N setup: real mount succeeds", mount_ok, mount_stderr)
 
 if mount_ok:
@@ -1158,7 +1158,7 @@ if mount_ok:
     # a fake but real CatalogEntry-shaped tile, standing in for "archive A's
     # content" - what matters is that it's genuinely present and clickable
     # before _unmount() runs, the same way a real mounted archive's tiles are
-    dummy_n.apps_picker.populate([main.CatalogEntry("Fake App", None, [("fake/rel", "/fake/live")], "folder", "applications")])
+    dummy_n.apps_picker.populate([main_window.CatalogEntry("Fake App", None, [("fake/rel", "/fake/live")], "folder", "applications")])
     check("Phase N: placeholder is hidden while real content is shown", dummy_n.apps_picker._placeholder.isHidden())
 
     dummy_n._unmount()
@@ -1171,7 +1171,7 @@ if mount_ok:
     check("Phase N: projects_picker was reset too (both pickers, not just the active tab)",
           not dummy_n.folders_picker._placeholder.isHidden())
 
-    r = subprocess.run(["fusermount", "-u", main.MOUNTPOINT], capture_output=True, text=True)
+    r = subprocess.run(["fusermount", "-u", main_window.MOUNTPOINT], capture_output=True, text=True)
 
 # ============================================================
 print("=== Phase O: existing-repo adoption - full recovery chain + persisted-passphrase honesty ===")
@@ -1193,13 +1193,13 @@ r = subprocess.run(["borg", "key", "export", "--paper", o_repo, o_paper_export],
 check("Phase O setup: export its paper key", r.returncode == 0, r.stderr)
 o_paper_text = open(o_paper_export).read()
 
-RealDestinationTypeDialog_O = main.DestinationTypeDialog
-RealQFileDialog_O = main.QFileDialog
-RealQInputDialog_O = main.QInputDialog
-RealQMessageBox_O = main.QMessageBox
-RealKeyRecoveryDialog_O = main.KeyRecoveryDialog
-RealPaperKeyWizardDialog_O = main.PaperKeyWizardDialog
-RealUnlockBackupDialog_O = main.UnlockBackupDialog
+RealDestinationTypeDialog_O = main_window.DestinationTypeDialog
+RealQFileDialog_O = main_window.QFileDialog
+RealQInputDialog_O = main_window.QInputDialog
+RealQMessageBox_O = main_window.QMessageBox
+RealKeyRecoveryDialog_O = main_window.KeyRecoveryDialog
+RealPaperKeyWizardDialog_O = main_window.PaperKeyWizardDialog
+RealUnlockBackupDialog_O = main_window.UnlockBackupDialog
 
 
 class StubDestinationTypeDialog_O:
@@ -1253,8 +1253,8 @@ def run_phase_o_scenario(remember):
     dummy_o._unmount = lambda: True
     dummy_o.refresh_status = lambda *a, **k: None
     dummy_o._stop_status_query = lambda: None  # no real status_worker on a dummy - safe no-op
-    dummy_o._offer_key_recovery = types.MethodType(main.MainWindow._offer_key_recovery, dummy_o)
-    dummy_o._offer_unlock = types.MethodType(main.MainWindow._offer_unlock, dummy_o)
+    dummy_o._offer_key_recovery = types.MethodType(main_window.MainWindow._offer_key_recovery, dummy_o)
+    dummy_o._offer_unlock = types.MethodType(main_window.MainWindow._offer_unlock, dummy_o)
 
     class StubUnlockDialog_O:
         def __init__(self, label, parent=None):
@@ -1269,23 +1269,23 @@ def run_phase_o_scenario(remember):
             pass
 
     StubQMessageBox.calls = []
-    main.DestinationTypeDialog = StubDestinationTypeDialog_O
-    main.QFileDialog = StubQFileDialog_O
-    main.QInputDialog = StubQInputDialog_O
-    main.QMessageBox = StubQMessageBox
-    main.KeyRecoveryDialog = StubKeyRecoveryDialog_O
-    main.PaperKeyWizardDialog = make_wizard_o
-    main.UnlockBackupDialog = StubUnlockDialog_O
+    main_window.DestinationTypeDialog = StubDestinationTypeDialog_O
+    main_window.QFileDialog = StubQFileDialog_O
+    main_window.QInputDialog = StubQInputDialog_O
+    main_window.QMessageBox = StubQMessageBox
+    main_window.KeyRecoveryDialog = StubKeyRecoveryDialog_O
+    main_window.PaperKeyWizardDialog = make_wizard_o
+    main_window.UnlockBackupDialog = StubUnlockDialog_O
     try:
-        main.MainWindow.change_backup_destination(dummy_o)
+        main_window.MainWindow.change_backup_destination(dummy_o)
     finally:
-        main.DestinationTypeDialog = RealDestinationTypeDialog_O
-        main.QFileDialog = RealQFileDialog_O
-        main.QInputDialog = RealQInputDialog_O
-        main.QMessageBox = RealQMessageBox_O
-        main.KeyRecoveryDialog = RealKeyRecoveryDialog_O
-        main.PaperKeyWizardDialog = RealPaperKeyWizardDialog_O
-        main.UnlockBackupDialog = RealUnlockBackupDialog_O
+        main_window.DestinationTypeDialog = RealDestinationTypeDialog_O
+        main_window.QFileDialog = RealQFileDialog_O
+        main_window.QInputDialog = RealQInputDialog_O
+        main_window.QMessageBox = RealQMessageBox_O
+        main_window.KeyRecoveryDialog = RealKeyRecoveryDialog_O
+        main_window.PaperKeyWizardDialog = RealPaperKeyWizardDialog_O
+        main_window.UnlockBackupDialog = RealUnlockBackupDialog_O
     return list(StubQMessageBox.calls)
 
 
@@ -1295,33 +1295,33 @@ def run_phase_o_scenario(remember):
 # left off, so the final message must be a WARNING, not a false "success".
 o_fresh_config_dir_1 = f"{o_dir}/borgconfig_fresh_1"
 os.environ["BORG_CONFIG_DIR"] = o_fresh_config_dir_1
-main.PASSFILE = f"{o_dir}/passfile_wrong_1"
-with open(main.PASSFILE, "w") as f:
+main_window.PASSFILE = f"{o_dir}/passfile_wrong_1"
+with open(main_window.PASSFILE, "w") as f:
     f.write("this-is-not-the-right-passphrase")
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 calls_o1 = run_phase_o_scenario(remember=False)
 check("Phase O1: reached a warning (not a silent success) with Remember off",
       any(c[0] == "warning" and "isn't saved to disk" in c[1] for c in calls_o1), calls_o1)
 check("Phase O1: repo is genuinely usable this session (key + session passphrase both recovered)",
-      main.check_passphrase(o_repo, O_PASSPHRASE)[0])
+      main_window.check_passphrase(o_repo, O_PASSPHRASE)[0])
 check("Phase O1: on-disk passphrase file was NOT changed (Remember was off)",
-      open(main.PASSFILE).read() == "this-is-not-the-right-passphrase")
+      open(main_window.PASSFILE).read() == "this-is-not-the-right-passphrase")
 
 # --- O2: same full chain, but Remember=True this time - final message must
 # be the real success message, and the passphrase must now actually be on disk
 o_fresh_config_dir_2 = f"{o_dir}/borgconfig_fresh_2"
 os.environ["BORG_CONFIG_DIR"] = o_fresh_config_dir_2
-main.PASSFILE = f"{o_dir}/passfile_wrong_2"
-with open(main.PASSFILE, "w") as f:
+main_window.PASSFILE = f"{o_dir}/passfile_wrong_2"
+with open(main_window.PASSFILE, "w") as f:
     f.write("also not right")
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 calls_o2 = run_phase_o_scenario(remember=True)
 check("Phase O2: reached the real success message with Remember on",
       any(c[0] == "information" and "automatic backups can use this destination" in c[1] for c in calls_o2), calls_o2)
 check("Phase O2: passphrase is now genuinely persisted to disk",
-      open(main.PASSFILE).read() == O_PASSPHRASE)
+      open(main_window.PASSFILE).read() == O_PASSPHRASE)
 
 # --- O3: nothing was ever broken (key present, passphrase already correct)
 # - the fast path must still show the real success message, not a false warning
@@ -1330,10 +1330,10 @@ os.environ["BORG_CONFIG_DIR"] = o_fresh_config_dir_3
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", o_repo + "_already_fine"],
                     env=env_with(O_PASSPHRASE), capture_output=True, text=True)
 check("Phase O3 setup: init a second, already-fine repo", r.returncode == 0, r.stderr)
-main.PASSFILE = f"{o_dir}/passfile_already_correct"
-with open(main.PASSFILE, "w") as f:
+main_window.PASSFILE = f"{o_dir}/passfile_already_correct"
+with open(main_window.PASSFILE, "w") as f:
     f.write(O_PASSPHRASE)
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 
 class StubQFileDialog_O3:
@@ -1343,24 +1343,24 @@ class StubQFileDialog_O3:
 
 
 dummy_o3 = QWidget()
-dummy_o3.mount_coordinator = main.MountCoordinator()
+dummy_o3.mount_coordinator = main_window.MountCoordinator()
 dummy_o3._repo_op_running = False
 dummy_o3.mounted = False
 dummy_o3._unmount = lambda: True
 dummy_o3.refresh_status = lambda *a, **k: None
 dummy_o3._stop_status_query = lambda: None  # no real status_worker on a dummy - safe no-op
 StubQMessageBox.calls = []
-main.DestinationTypeDialog = StubDestinationTypeDialog_O
-main.QFileDialog = StubQFileDialog_O3
-main.QInputDialog = StubQInputDialog_O
-main.QMessageBox = StubQMessageBox
+main_window.DestinationTypeDialog = StubDestinationTypeDialog_O
+main_window.QFileDialog = StubQFileDialog_O3
+main_window.QInputDialog = StubQInputDialog_O
+main_window.QMessageBox = StubQMessageBox
 try:
-    main.MainWindow.change_backup_destination(dummy_o3)
+    main_window.MainWindow.change_backup_destination(dummy_o3)
 finally:
-    main.DestinationTypeDialog = RealDestinationTypeDialog_O
-    main.QFileDialog = RealQFileDialog_O
-    main.QInputDialog = RealQInputDialog_O
-    main.QMessageBox = RealQMessageBox_O
+    main_window.DestinationTypeDialog = RealDestinationTypeDialog_O
+    main_window.QFileDialog = RealQFileDialog_O
+    main_window.QInputDialog = RealQInputDialog_O
+    main_window.QMessageBox = RealQMessageBox_O
 check("Phase O3: already-working repo gets the real success message with no recovery needed",
       any(c[0] == "information" and "automatic backups can use this destination" in c[1] for c in StubQMessageBox.calls), StubQMessageBox.calls)
 
@@ -1369,7 +1369,7 @@ print("=== Phase P: KeyExportDialog survives a failed paper-key export ===")
 
 p_export_path = f"{SCRATCH}/phase_p_export_that_does_not_exist.txt"
 assert not os.path.exists(p_export_path)
-dlg_p = main.KeyExportDialog("some-passphrase", p_export_path, dummy_parent)
+dlg_p = main_window.KeyExportDialog("some-passphrase", p_export_path, dummy_parent)
 check("Phase P: dialog constructs without crashing when the export file is missing", True)
 check("Phase P: key_edit is None (nothing to show)", dlg_p.key_edit is None)
 check("Phase P: button label reflects passphrase-only", dlg_p.btn_done.text() == "I've Saved the Passphrase")
@@ -1392,7 +1392,7 @@ q_symlink_src = f"{q_dir}/src_symlink"
 os.symlink(q_target, q_symlink_src)
 q_dest = f"{q_dir}/dest"
 
-main.copy_item(q_symlink_src, q_dest)
+main_window.copy_item(q_symlink_src, q_dest)
 check("Phase Q: copy_item preserves a symlink source as a symlink at dest, not a dereferenced copy",
       os.path.islink(q_dest) and os.readlink(q_dest) == q_target)
 
@@ -1414,7 +1414,7 @@ os.symlink(q_broken_target, q_broken_src)
 check("Phase Q setup: the broken symlink is genuinely broken (exists() False) but a real object (lexists() True)",
       os.path.exists(q_broken_src) is False and os.path.lexists(q_broken_src) is True)
 q_broken_dest = f"{q_dir}/broken_dest"
-main.copy_item(q_broken_src, q_broken_dest)
+main_window.copy_item(q_broken_src, q_broken_dest)
 check("Phase Q: copy_item() correctly copies a BROKEN symlink as a symlink too (was never the actual bug)",
       os.path.islink(q_broken_dest) and os.readlink(q_broken_dest) == q_broken_target)
 
@@ -1423,16 +1423,16 @@ print("=== Phase R: _unmount() failure is reported, and a caller (delete) aborts
 
 r_mountpoint = f"{SCRATCH}/phase_r_not_actually_mounted"
 os.makedirs(r_mountpoint, exist_ok=True)
-main.MOUNTPOINT = r_mountpoint  # genuinely nothing mounted here - both borg umount and fusermount -u will fail
+main_window.MOUNTPOINT = r_mountpoint  # genuinely nothing mounted here - both borg umount and fusermount -u will fail
 
 dummy_r = QWidget()
-dummy_r.mount_coordinator = main.MountCoordinator()
+dummy_r.mount_coordinator = main_window.MountCoordinator()
 dummy_r.unmount_timer = QTimer()
-dummy_r.apps_picker = main.ItemPicker("hint")
-dummy_r.folders_picker = main.ItemPicker("hint")
+dummy_r.apps_picker = main_window.ItemPicker("hint")
+dummy_r.folders_picker = main_window.ItemPicker("hint")
 dummy_r.mounted = True  # lying that something is mounted, to force both unmount attempts to fail
 dummy_r.mounted_archive = "test1"
-dummy_r._unmount = types.MethodType(main.MainWindow._unmount, dummy_r)
+dummy_r._unmount = types.MethodType(main_window.MainWindow._unmount, dummy_r)
 
 result_r = dummy_r._unmount()
 check("Phase R: _unmount() reports False when nothing was actually there to unmount", result_r is False)
@@ -1440,15 +1440,15 @@ check("Phase R: self.mounted was NOT falsely cleared on a failed unmount", dummy
 
 # a real caller (delete) must abort rather than continue on top of this
 StubQMessageBox.calls = []
-main.QMessageBox = StubQMessageBox
+main_window.QMessageBox = StubQMessageBox
 dummy_r.archive_combo = QComboBox()
 dummy_r.archive_combo.addItem("test1")
 dummy_r._repo_op_running = False
 dummy_r._stop_status_query = lambda: None  # no real status_worker on a dummy - safe no-op
 try:
-    main.MainWindow.delete_current_archive(dummy_r)
+    main_window.MainWindow.delete_current_archive(dummy_r)
 finally:
-    main.QMessageBox = RealQMessageBox
+    main_window.QMessageBox = RealQMessageBox
 
 check("Phase R: delete_current_archive() shows a warning and does not proceed when unmount fails",
       any(c[0] == "warning" for c in StubQMessageBox.calls) and dummy_r._repo_op_running is False)
@@ -1457,36 +1457,36 @@ check("Phase R: delete_current_archive() shows a warning and does not proceed wh
 print("=== Phase S: Backup/Delete concurrency guard (2nd whole-app sweep round) ===")
 
 StubQMessageBox.calls = []
-main.QMessageBox = StubQMessageBox
+main_window.QMessageBox = StubQMessageBox
 dummy_s = QWidget()
-dummy_s.mount_coordinator = main.MountCoordinator()
+dummy_s.mount_coordinator = main_window.MountCoordinator()
 dummy_s._repo_op_running = True  # simulate an operation already running
 try:
-    main.MainWindow.delete_current_archive(dummy_s)
+    main_window.MainWindow.delete_current_archive(dummy_s)
     check("Phase S: delete_current_archive() refuses when something is already running",
           any(c[0] == "information" for c in StubQMessageBox.calls) and not hasattr(dummy_s, "delete_worker"))
     StubQMessageBox.calls = []
-    main.MainWindow.start_backup(dummy_s)
+    main_window.MainWindow.start_backup(dummy_s)
     check("Phase S: start_backup() refuses when something is already running",
           any(c[0] == "information" for c in StubQMessageBox.calls) and not hasattr(dummy_s, "worker"))
 finally:
-    main.QMessageBox = RealQMessageBox
+    main_window.QMessageBox = RealQMessageBox
 
 # ============================================================
 print("=== Phase T: _unmount() restarts the retry timer on failure instead of leaving it stopped ===")
 
 t_mountpoint = f"{SCRATCH}/phase_t_not_mounted"
 os.makedirs(t_mountpoint, exist_ok=True)
-main.MOUNTPOINT = t_mountpoint
+main_window.MOUNTPOINT = t_mountpoint
 
 dummy_t = QWidget()
-dummy_t.mount_coordinator = main.MountCoordinator()
+dummy_t.mount_coordinator = main_window.MountCoordinator()
 dummy_t.unmount_timer = QTimer()
-dummy_t.apps_picker = main.ItemPicker("hint")
-dummy_t.folders_picker = main.ItemPicker("hint")
+dummy_t.apps_picker = main_window.ItemPicker("hint")
+dummy_t.folders_picker = main_window.ItemPicker("hint")
 dummy_t.mounted = True
 dummy_t.mounted_archive = "test1"
-dummy_t._unmount = types.MethodType(main.MainWindow._unmount, dummy_t)
+dummy_t._unmount = types.MethodType(main_window.MainWindow._unmount, dummy_t)
 
 dummy_t._unmount()
 check("Phase T: unmount_timer is active again after a failed unmount (retry scheduled, not left stopped)",
@@ -1495,7 +1495,7 @@ check("Phase T: unmount_timer is active again after a failed unmount (retry sche
 # ============================================================
 print("=== Phase U: BackupWorker passes a session-only passphrase through to the script's env ===")
 
-main._session_passphrase_override = "phase-u-session-passphrase"
+main_window._session_passphrase_override = "phase-u-session-passphrase"
 captured_env = {}
 
 
@@ -1507,14 +1507,14 @@ def capturing_popen(*a, **k):
 original_popen = subprocess.Popen
 subprocess.Popen = capturing_popen
 try:
-    worker_u = main.BackupWorker()
+    worker_u = main_window.BackupWorker()
     u_events = []
     worker_u.finished_ok.connect(lambda ok: u_events.append(ok))
     worker_u.output.connect(lambda text: None)
     worker_u.run()
 finally:
     subprocess.Popen = original_popen
-    main._session_passphrase_override = None
+    main_window._session_passphrase_override = None
 
 check("Phase U: BORG_PASSPHRASE was included in the script's environment",
       captured_env.get("BORG_PASSPHRASE") == "phase-u-session-passphrase")
@@ -1546,15 +1546,15 @@ check("Phase U: the real script's guard preserves a pre-set BORG_PASSPHRASE (man
 # ============================================================
 print("=== Phase V: PaperKeyImportWorker.run() reports failure cleanly if import_paper_key() itself raises ===")
 
-real_import_paper_key = main.import_paper_key
-main.import_paper_key = lambda repo, text: (_ for _ in ()).throw(RuntimeError("simulated failure"))
+real_import_paper_key = main_window.import_paper_key
+main_window.import_paper_key = lambda repo, text: (_ for _ in ()).throw(RuntimeError("simulated failure"))
 try:
-    worker_v = main.PaperKeyImportWorker(REPO, "id: fake\n 1: fake\n")
+    worker_v = main_window.PaperKeyImportWorker(REPO, "id: fake\n 1: fake\n")
     v_events = []
     worker_v.finished_result.connect(lambda ok, msg: v_events.append((ok, msg)))
     worker_v.run()
 finally:
-    main.import_paper_key = real_import_paper_key
+    main_window.import_paper_key = real_import_paper_key
 
 check("Phase V: finished_result still emits exactly once when import_paper_key() raises", len(v_events) == 1)
 check("Phase V: reports failure, not a crash", bool(v_events) and v_events[0][0] is False)
@@ -1564,24 +1564,24 @@ check("Phase V: pasted_text is still cleared even on this failure path", worker_
 print("=== Phase W: save_config() writes atomically (temp file + os.replace) ===")
 
 w_config_path = f"{SCRATCH}/phase_w_config.json"
-RealCONFIG_PATH = main.CONFIG_PATH
-RealCONFIG = main.CONFIG
-main.CONFIG_PATH = Path(w_config_path)
-main.CONFIG = {"destination": {"type": "other", "repo": "/fake/repo"}, "test_marker": "phase_w"}
+RealCONFIG_PATH = main_window.CONFIG_PATH
+RealCONFIG = main_window.CONFIG
+main_window.CONFIG_PATH = Path(w_config_path)
+main_window.CONFIG = {"destination": {"type": "other", "repo": "/fake/repo"}, "test_marker": "phase_w"}
 # save_config() itself is neutralized to a no-op for the WHOLE suite's
 # safety (line ~59) - restore the real one just for this one call, against
 # the scratch CONFIG_PATH set above, then put the no-op straight back.
-main.save_config = REAL_save_config
+main_window.save_config = REAL_save_config
 try:
-    main.save_config()
+    main_window.save_config()
     check("Phase W: config file was actually written", os.path.isfile(w_config_path))
     written = json.loads(Path(w_config_path).read_text())
     check("Phase W: content matches what was saved", written.get("test_marker") == "phase_w")
     check("Phase W: no leftover .tmp file after a successful write", not os.path.exists(f"{w_config_path}.tmp"))
 finally:
-    main.save_config = lambda: None
-    main.CONFIG_PATH = RealCONFIG_PATH
-    main.CONFIG = RealCONFIG
+    main_window.save_config = lambda: None
+    main_window.CONFIG_PATH = RealCONFIG_PATH
+    main_window.CONFIG = RealCONFIG
 
 # ============================================================
 print("=== Phase X: a REAL MainWindow() construction, not a lightweight dummy ===")
@@ -1614,23 +1614,23 @@ check("Phase X setup: create archive2 (so there's a 'switch to another version' 
 
 # CRITICAL: refresh_status() (called from MainWindow.__init__) calls
 # refresh_destination(), which RE-RESOLVES REPO/DEST_STATUS from
-# CONFIG["destination"] on every call - overriding main.REPO/main.DEST_STATUS
+# CONFIG["destination"] on every call - overriding main_window.REPO/main.DEST_STATUS
 # directly (as every other phase above does) is NOT enough once a REAL
 # MainWindow is being constructed, since __init__'s own refresh_status()
 # call immediately stomps them back to whatever CONFIG["destination"]
 # resolves to. Missing this on the first draft of this exact test sent it
 # at the REAL production repo - caught before anything was touched, but
 # exactly the mistake this whole session has a standing hard rule about.
-RealCONFIG_destination = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase X Destination", "repo": X_REPO}
-main.PASSFILE = f"{x_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase X Destination", "repo": X_REPO}
+main_window.PASSFILE = f"{x_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write(X_PASSPHRASE)
-main.MOUNTPOINT = f"{x_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{x_dir}/mount"
+main_window._session_passphrase_override = None
 
 try:
-    win_x = main.MainWindow()
+    win_x = main_window.MainWindow()
     check("Phase X: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase X: a real MainWindow() constructs without raising", False, repr(e))
@@ -1660,9 +1660,9 @@ if win_x is not None:
     check("Phase X: placeholder is gone, real content is showing", win_x.apps_picker._placeholder.isHidden())
 
     if win_x.mounted:
-        r = subprocess.run(["fusermount", "-u", main.MOUNTPOINT], capture_output=True, text=True)
+        r = subprocess.run(["fusermount", "-u", main_window.MOUNTPOINT], capture_output=True, text=True)
 
-main.CONFIG["destination"] = RealCONFIG_destination
+main_window.CONFIG["destination"] = RealCONFIG_destination
 
 # ============================================================
 # Native delegate rendering is verified in test_gui_smoke.py.
@@ -1670,12 +1670,12 @@ print("=== Phase Z: item selection uses the standard click/Shift+click/Ctrl+clic
 print("    (previously: every plain click toggled that item with no modifier needed at all -")
 print("    changed on direct user request: a plain click should only select what was clicked)")
 
-z_picker = main.ItemPicker("hint")
+z_picker = main_window.ItemPicker("hint")
 z_section = z_picker._new_section_widget()
 check("Phase Z: section list uses checkboxes without drag selection",
-      z_section.selectionMode() == main.QAbstractItemView.NoSelection)
+      z_section.selectionMode() == main_window.QAbstractItemView.NoSelection)
 check("Phase Z: no longer uses the old MultiSelection (toggle-per-click, no modifier) mode",
-      z_section.selectionMode() != main.QAbstractItemView.MultiSelection)
+      z_section.selectionMode() != main_window.QAbstractItemView.MultiSelection)
 
 # ============================================================
 cleanup_scratch()
@@ -1689,13 +1689,13 @@ os.makedirs(aa_dir)
 aa_new_repo_folder = f"{aa_dir}/would_be_new_repo"
 os.makedirs(aa_new_repo_folder)  # exists but empty - looks_like_borg_repo() is False, so this takes the new-repo-init branch
 
-main.PASSFILE = f"{aa_dir}/passphrase"
+main_window.PASSFILE = f"{aa_dir}/passphrase"
 aa_original_passfile_marker = "original-passphrase-must-survive-completely-untouched"
-with open(main.PASSFILE, "w") as f:
+with open(main_window.PASSFILE, "w") as f:
     f.write(aa_original_passfile_marker)
 aa_old_repo_marker = f"{aa_dir}/old_repo_never_switched_away_from"
-main.CONFIG["destination"] = {"type": "other", "label": "AA Old Destination", "repo": aa_old_repo_marker}
-main._session_passphrase_override = "aa-stale-session-override-must-be-left-alone"
+main_window.CONFIG["destination"] = {"type": "other", "label": "AA Old Destination", "repo": aa_old_repo_marker}
+main_window._session_passphrase_override = "aa-stale-session-override-must-be-left-alone"
 
 
 class ShouldNotBeConstructed_AA:
@@ -1724,47 +1724,47 @@ class StubQInputDialog_AA:
 
 
 dummy_aa = QWidget()
-dummy_aa.mount_coordinator = main.MountCoordinator()
+dummy_aa.mount_coordinator = main_window.MountCoordinator()
 dummy_aa._repo_op_running = False
 dummy_aa.mounted = True  # something IS "mounted" so _unmount() below is genuinely exercised, not skipped as a no-op
 dummy_aa._unmount = lambda: False  # forces exactly the failure this test is about
 dummy_aa.refresh_status = lambda *a, **k: None
 dummy_aa._stop_status_query = lambda: None  # no real status_worker on a dummy - safe no-op
 
-RealDestinationTypeDialog_AA = main.DestinationTypeDialog
-RealQFileDialog_AA = main.QFileDialog
-RealQInputDialog_AA = main.QInputDialog
-RealQMessageBox_AA = main.QMessageBox
-RealKeyExportDialog_AA = main.KeyExportDialog
+RealDestinationTypeDialog_AA = main_window.DestinationTypeDialog
+RealQFileDialog_AA = main_window.QFileDialog
+RealQInputDialog_AA = main_window.QInputDialog
+RealQMessageBox_AA = main_window.QMessageBox
+RealKeyExportDialog_AA = main_window.KeyExportDialog
 
 StubQMessageBox.calls = []
-main.DestinationTypeDialog = StubDestinationTypeDialog_AA
-main.QFileDialog = StubQFileDialog_AA
-main.QInputDialog = StubQInputDialog_AA
-main.QMessageBox = StubQMessageBox
-main.KeyExportDialog = ShouldNotBeConstructed_AA
+main_window.DestinationTypeDialog = StubDestinationTypeDialog_AA
+main_window.QFileDialog = StubQFileDialog_AA
+main_window.QInputDialog = StubQInputDialog_AA
+main_window.QMessageBox = StubQMessageBox
+main_window.KeyExportDialog = ShouldNotBeConstructed_AA
 
 no_dialog_reached_aa = True
 try:
-    main.MainWindow.change_backup_destination(dummy_aa)
+    main_window.MainWindow.change_backup_destination(dummy_aa)
 except AssertionError:
     no_dialog_reached_aa = False
 finally:
-    main.DestinationTypeDialog = RealDestinationTypeDialog_AA
-    main.QFileDialog = RealQFileDialog_AA
-    main.QInputDialog = RealQInputDialog_AA
-    main.QMessageBox = RealQMessageBox_AA
-    main.KeyExportDialog = RealKeyExportDialog_AA
+    main_window.DestinationTypeDialog = RealDestinationTypeDialog_AA
+    main_window.QFileDialog = RealQFileDialog_AA
+    main_window.QInputDialog = RealQInputDialog_AA
+    main_window.QMessageBox = RealQMessageBox_AA
+    main_window.KeyExportDialog = RealKeyExportDialog_AA
 
 check("Phase AA: KeyExportDialog is never reached when the old repo fails to unmount", no_dialog_reached_aa)
 check("Phase AA: no repo was actually created at the target folder",
-      not main.looks_like_borg_repo(aa_new_repo_folder))
+      not main_window.looks_like_borg_repo(aa_new_repo_folder))
 check("Phase AA: the real passphrase file content is completely untouched",
-      open(main.PASSFILE).read() == aa_original_passfile_marker)
+      open(main_window.PASSFILE).read() == aa_original_passfile_marker)
 check("Phase AA: config.json's destination was NOT switched to the new (never-created) repo",
-      main.CONFIG["destination"]["repo"] == aa_old_repo_marker)
+      main_window.CONFIG["destination"]["repo"] == aa_old_repo_marker)
 check("Phase AA: the stale session passphrase override was left alone (the switch never happened)",
-      main._session_passphrase_override == "aa-stale-session-override-must-be-left-alone")
+      main_window._session_passphrase_override == "aa-stale-session-override-must-be-left-alone")
 check("Phase AA: the warning says nothing was created (not the old, misleading 'passphrase is safe' claim)",
       any(c[0] == "warning" and "Nothing was created" in c[1] for c in StubQMessageBox.calls),
       StubQMessageBox.calls)
@@ -1775,10 +1775,10 @@ print("    (Files & Folders / Applications / System & Settings are separate QLis
 print("    ExtendedSelection's native 'plain click replaces selection' only knew about")
 print("    items within whichever ONE of them was actually clicked)")
 
-bb_picker = main.ItemPicker("hint")
+bb_picker = main_window.ItemPicker("hint")
 bb_catalog = [
-    main.CatalogEntry("Doc A", None, [("a/rel", "/a/live")], "folder", "personal"),
-    main.CatalogEntry("App B", None, [("b/rel", "/b/live")], "folder", "applications"),
+    main_window.CatalogEntry("Doc A", None, [("a/rel", "/a/live")], "folder", "personal"),
+    main_window.CatalogEntry("App B", None, [("b/rel", "/b/live")], "folder", "applications"),
 ]
 bb_picker.populate(bb_catalog)
 check("Phase BB setup: two separate sections were actually created (personal + applications)",
@@ -1812,8 +1812,8 @@ os.environ["BORG_CONFIG_DIR"] = f"{cc_dir}/borgconfig"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", CC_REPO], env=env_with(CC_PASSPHRASE), capture_output=True, text=True)
 check("Phase CC setup: init repo", r.returncode == 0, r.stderr)
 
-cc_help = main.HelpDialog()
-cc_help_text = " ".join(lbl.text() for lbl in cc_help.findChildren(main.QLabel) if lbl.text())
+cc_help = main_window.HelpDialog()
+cc_help_text = " ".join(lbl.text() for lbl in cc_help.findChildren(main_window.QLabel) if lbl.text())
 check("Phase CC: HelpDialog explains Safe vs Direct restore",
       "Safe" in cc_help_text and "Direct" in cc_help_text)
 check("Phase CC: HelpDialog explains the Remember-passphrase checkbox",
@@ -1825,25 +1825,25 @@ check("Phase CC: HelpDialog explains the three tabs (Apps & Data / Folders / Adv
 check("Phase CC: HelpDialog explains Backup Now / Delete / Change Destination",
       "Backup Now" in cc_help_text and "Delete This Archive" in cc_help_text and "Change Destination" in cc_help_text)
 check("Phase CC: HelpDialog content is wrapped in a scroll area (Close stays reachable regardless of content length)",
-      any(isinstance(child, main.QScrollArea) for child in cc_help.findChildren(main.QScrollArea)))
+      any(isinstance(child, main_window.QScrollArea) for child in cc_help.findChildren(main_window.QScrollArea)))
 cc_help.close()
 
-cc_about = main.AboutDialog()
-cc_about_text = " ".join(lbl.text() for lbl in cc_about.findChildren(main.QLabel) if lbl.text())
+cc_about = main_window.AboutDialog()
+cc_about_text = " ".join(lbl.text() for lbl in cc_about.findChildren(main_window.QLabel) if lbl.text())
 check("Phase CC: AboutDialog names the app", "Keep Backup" in cc_about_text)
-check("Phase CC: AboutDialog shows the live repo path", main.REPO in cc_about_text)
-check("Phase CC: AboutDialog shows the config file path", str(main.CONFIG_PATH) in cc_about_text)
+check("Phase CC: AboutDialog shows the live repo path", main_window.REPO in cc_about_text)
+check("Phase CC: AboutDialog shows the config file path", str(main_window.CONFIG_PATH) in cc_about_text)
 cc_about.close()
 
-RealCONFIG_destination_cc = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase CC Destination", "repo": CC_REPO}
-main.PASSFILE = f"{cc_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_cc = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase CC Destination", "repo": CC_REPO}
+main_window.PASSFILE = f"{cc_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write(CC_PASSPHRASE)
-main.MOUNTPOINT = f"{cc_dir}/mount"
+main_window.MOUNTPOINT = f"{cc_dir}/mount"
 
 try:
-    win_cc = main.MainWindow()
+    win_cc = main_window.MainWindow()
     check("Phase CC: a real MainWindow() with the new menu bar constructs without raising", True)
 except Exception as e:
     check("Phase CC: a real MainWindow() with the new menu bar constructs without raising", False, repr(e))
@@ -1872,20 +1872,20 @@ if win_cc is not None:
               cc_action_texts == ["Keep Backup Help", "About Keep Backup"], cc_action_texts)
 
         cc_opened = []
-        RealHelpExec = main.HelpDialog.exec
-        RealAboutExec = main.AboutDialog.exec
-        main.HelpDialog.exec = lambda self: cc_opened.append("help")
-        main.AboutDialog.exec = lambda self: cc_opened.append("about")
+        RealHelpExec = main_window.HelpDialog.exec
+        RealAboutExec = main_window.AboutDialog.exec
+        main_window.HelpDialog.exec = lambda self: cc_opened.append("help")
+        main_window.AboutDialog.exec = lambda self: cc_opened.append("about")
         try:
             for action in cc_help_menu.actions():
                 action.trigger()
             check("Phase CC: the two menu actions actually open Help then About, in order",
                   cc_opened == ["help", "about"], cc_opened)
         finally:
-            main.HelpDialog.exec = RealHelpExec
-            main.AboutDialog.exec = RealAboutExec
+            main_window.HelpDialog.exec = RealHelpExec
+            main_window.AboutDialog.exec = RealAboutExec
 
-main.CONFIG["destination"] = RealCONFIG_destination_cc
+main_window.CONFIG["destination"] = RealCONFIG_destination_cc
 
 # ============================================================
 print("=== Phase DD: Compare Archives (borg diff) and the exclude-pattern editor ===")
@@ -1918,8 +1918,8 @@ with open(f"{DD_SRC}/d.txt", "w") as f:
 r = subprocess.run(["borg", "create", f"{DD_REPO}::archive2", DD_SRC], env=env_with(DD_PASSPHRASE), capture_output=True, text=True)
 check("Phase DD setup: create archive2 (modified/added/removed vs archive1)", r.returncode == 0, r.stderr)
 
-main.PASSFILE = f"{dd_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+main_window.PASSFILE = f"{dd_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write(DD_PASSPHRASE)
 # Phase CC (just before this one) leaves a real MainWindow around, which
 # may have set a session passphrase override during its own flow -
@@ -1927,10 +1927,10 @@ with open(main.PASSFILE, "w") as f:
 # here would silently authenticate DiffWorker against the WRONG repo's
 # passphrase. Reset explicitly, same standing rule as every other phase
 # that starts a fresh scratch repo.
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 dd_result = {}
-dd_worker = main.DiffWorker(DD_REPO, "archive1", "archive2")
+dd_worker = main_window.DiffWorker(DD_REPO, "archive1", "archive2")
 dd_worker.finished_result.connect(lambda ok, entries, error: dd_result.update(ok=ok, entries=entries, error=error))
 dd_worker.start()
 check("Phase DD: DiffWorker completes", pump(lambda: "ok" in dd_result, timeout=30))
@@ -1948,7 +1948,7 @@ dd_a_changes = next(c for p, c in dd_result["entries"] if p.endswith("a.txt"))
 check("Phase DD: modified file is classified as 'modified', not lumped in with metadata noise",
       any(c["type"] == "modified" for c in dd_a_changes))
 
-dd_dialog = main.CompareArchivesDialog(DD_REPO, ["archive1", "archive2"], "archive2")
+dd_dialog = main_window.CompareArchivesDialog(DD_REPO, ["archive1", "archive2"], "archive2")
 check("Phase DD: CompareArchivesDialog defaults A to the currently-browsed archive", dd_dialog.combo_a.currentText() == "archive2")
 check("Phase DD: CompareArchivesDialog defaults B to a DIFFERENT archive automatically", dd_dialog.combo_b.currentText() == "archive1")
 dd_dialog._run_compare()
@@ -1969,7 +1969,7 @@ dd_realistic_content = (
 with open(dd_excludes_path, "w") as f:
     f.write(dd_realistic_content)
 
-dd_editor = main.ExcludeEditorDialog(dd_excludes_path)
+dd_editor = main_window.ExcludeEditorDialog(dd_excludes_path)
 check("Phase DD: exclude editor loads the file's exact content, comments included",
       dd_editor.editor.toPlainText() == dd_realistic_content)
 dd_editor._save()
@@ -1978,7 +1978,7 @@ with open(dd_excludes_path) as f:
 check("Phase DD: saving with no edits round-trips byte-for-byte (comments not silently rebuilt away)",
       dd_after_untouched_save == dd_realistic_content)
 
-dd_editor2 = main.ExcludeEditorDialog(dd_excludes_path)
+dd_editor2 = main_window.ExcludeEditorDialog(dd_excludes_path)
 dd_editor2.editor.setPlainText(dd_editor2.editor.toPlainText() + "sh:home/alice/.newapp/cache\n")
 dd_editor2._save()
 with open(dd_excludes_path) as f:
@@ -1989,7 +1989,7 @@ check("Phase DD: existing comment survives an edit elsewhere in the file",
 check("Phase DD: no leftover .tmp file after a real save (atomic write)",
       not os.path.exists(f"{dd_excludes_path}.tmp"))
 
-dd_editor3 = main.ExcludeEditorDialog(dd_excludes_path)
+dd_editor3 = main_window.ExcludeEditorDialog(dd_excludes_path)
 dd_editor3.editor.setPlainText("this must never be saved")
 dd_editor3.reject()
 with open(dd_excludes_path) as f:
@@ -1999,11 +1999,11 @@ check("Phase DD: Cancel writes nothing to disk", dd_after_cancel == dd_after_edi
 # Real MainWindow construction, same reasoning as Phase X/CC - proves
 # _build_ui() actually wires both new buttons to the right handlers, not
 # just that the dialog classes work in isolation.
-RealCONFIG_destination_dd = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase DD Destination", "repo": DD_REPO}
-main.MOUNTPOINT = f"{dd_dir}/mount"
+RealCONFIG_destination_dd = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase DD Destination", "repo": DD_REPO}
+main_window.MOUNTPOINT = f"{dd_dir}/mount"
 try:
-    win_dd = main.MainWindow()
+    win_dd = main_window.MainWindow()
     check("Phase DD: a real MainWindow() with the new buttons constructs without raising", True)
 except Exception as e:
     check("Phase DD: a real MainWindow() with the new buttons constructs without raising", False, repr(e))
@@ -2011,7 +2011,7 @@ except Exception as e:
 
 if win_dd is not None:
     check("Phase DD: btn_compare_archives exists and is a real QPushButton",
-          isinstance(win_dd.btn_compare_archives, main.QAction))
+          isinstance(win_dd.btn_compare_archives, main_window.QAction))
     # btn_edit_excludes used to be checked here as a QPushButton - it moved
     # into the Backup menu (see Phase II), so MainWindow no longer has this
     # attribute at all. Confirms the removal was deliberate and complete,
@@ -2024,10 +2024,10 @@ if win_dd is not None:
             pass
 
     dd_compare_called = []
-    RealCompareArchivesDialog = main.CompareArchivesDialog
-    RealQMessageBox_dd = main.QMessageBox
-    main.CompareArchivesDialog = lambda *a, **k: dd_compare_called.append((a, k)) or ShouldNotBeConstructed_DD()
-    main.QMessageBox = StubQMessageBox
+    RealCompareArchivesDialog = main_window.CompareArchivesDialog
+    RealQMessageBox_dd = main_window.QMessageBox
+    main_window.CompareArchivesDialog = lambda *a, **k: dd_compare_called.append((a, k)) or ShouldNotBeConstructed_DD()
+    main_window.QMessageBox = StubQMessageBox
     StubQMessageBox.calls = []
     try:
         # win_dd's own construction dispatches a real, async status_worker
@@ -2058,10 +2058,10 @@ if win_dd is not None:
               any("at least two" in c[1].lower() for c in StubQMessageBox.calls if c[0] == "information"),
               StubQMessageBox.calls)
     finally:
-        main.CompareArchivesDialog = RealCompareArchivesDialog
-        main.QMessageBox = RealQMessageBox_dd
+        main_window.CompareArchivesDialog = RealCompareArchivesDialog
+        main_window.QMessageBox = RealQMessageBox_dd
 
-main.CONFIG["destination"] = RealCONFIG_destination_dd
+main_window.CONFIG["destination"] = RealCONFIG_destination_dd
 
 # ============================================================
 # Shared theme roles/contrast/round-trips are covered in test_theming.py.
@@ -2076,15 +2076,15 @@ os.makedirs(hh_dir)
 HH_REPO = f"{hh_dir}/repo"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", HH_REPO], env=env_with("phase-hh-passphrase"), capture_output=True, text=True)
 check("Phase HH setup: init repo", r.returncode == 0, r.stderr)
-RealCONFIG_destination_hh = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase HH Destination", "repo": HH_REPO}
-main.PASSFILE = f"{hh_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_hh = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase HH Destination", "repo": HH_REPO}
+main_window.PASSFILE = f"{hh_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-hh-passphrase")
-main.MOUNTPOINT = f"{hh_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{hh_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_hh = main.MainWindow()
+    win_hh = main_window.MainWindow()
     check("Phase HH: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase HH: a real MainWindow() constructs without raising", False, repr(e))
@@ -2118,7 +2118,7 @@ if win_hh is not None:
         raise FileNotFoundError("simulated - script not actually run in this test")
     original_popen_hh = subprocess.Popen
     subprocess.Popen = hh_failing_popen
-    main.QMessageBox = StubQMessageBox
+    main_window.QMessageBox = StubQMessageBox
     try:
         # explicitly collapsed first - a later reviewer pass correctly
         # called out that force-expanding this on every backup start meant
@@ -2151,8 +2151,8 @@ if win_hh is not None:
               and win_hh.btn_compare_archives.isEnabled())
     finally:
         subprocess.Popen = original_popen_hh
-        main.QMessageBox = RealQMessageBox
-main.CONFIG["destination"] = RealCONFIG_destination_hh
+        main_window.QMessageBox = RealQMessageBox
+main_window.CONFIG["destination"] = RealCONFIG_destination_hh
 
 # ============================================================
 print("=== Phase II: Change Destination / Edit Backup Excludes moved into a Backup menu ===")
@@ -2179,31 +2179,31 @@ print("    'Backup' was an odd title when neither original item actually started
 # stub it out - that independently hung Phase CC this same round, caught
 # by actually running the suite rather than reading the code). Caught here
 # by a reviewer's static read before ever executing it.
-RealMainWindow_change_backup_destination = main.MainWindow.change_backup_destination
-RealMainWindow_edit_excludes = main.MainWindow.edit_excludes
-RealMainWindow_start_backup = main.MainWindow.start_backup
+RealMainWindow_change_backup_destination = main_window.MainWindow.change_backup_destination
+RealMainWindow_edit_excludes = main_window.MainWindow.edit_excludes
+RealMainWindow_start_backup = main_window.MainWindow.start_backup
 ii_change_dest_called = []
 ii_edit_excludes_called = []
 ii_start_backup_called = []
-main.MainWindow.change_backup_destination = lambda self: ii_change_dest_called.append(True)
-main.MainWindow.edit_excludes = lambda self: ii_edit_excludes_called.append(True)
-main.MainWindow.start_backup = lambda self: ii_start_backup_called.append(True)
+main_window.MainWindow.change_backup_destination = lambda self: ii_change_dest_called.append(True)
+main_window.MainWindow.edit_excludes = lambda self: ii_edit_excludes_called.append(True)
+main_window.MainWindow.start_backup = lambda self: ii_start_backup_called.append(True)
 
 ii_dir = f"{SCRATCH}/phase_ii"
 os.makedirs(ii_dir)
 II_REPO = f"{ii_dir}/repo"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", II_REPO], env=env_with("phase-ii-passphrase"), capture_output=True, text=True)
 check("Phase II setup: init repo", r.returncode == 0, r.stderr)
-RealCONFIG_destination_ii = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase II Destination", "repo": II_REPO}
-main.PASSFILE = f"{ii_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_ii = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase II Destination", "repo": II_REPO}
+main_window.PASSFILE = f"{ii_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-ii-passphrase")
-main.MOUNTPOINT = f"{ii_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{ii_dir}/mount"
+main_window._session_passphrase_override = None
 try:
     try:
-        win_ii = main.MainWindow()
+        win_ii = main_window.MainWindow()
         check("Phase II: a real MainWindow() constructs without raising", True)
     except Exception as e:
         check("Phase II: a real MainWindow() constructs without raising", False, repr(e))
@@ -2246,11 +2246,11 @@ try:
               ii_change_dest_called == [True])
         check("Phase II: Edit Backup Excludes... action fires edit_excludes",
               ii_edit_excludes_called == [True])
-    main.CONFIG["destination"] = RealCONFIG_destination_ii
+    main_window.CONFIG["destination"] = RealCONFIG_destination_ii
 finally:
-    main.MainWindow.change_backup_destination = RealMainWindow_change_backup_destination
-    main.MainWindow.edit_excludes = RealMainWindow_edit_excludes
-    main.MainWindow.start_backup = RealMainWindow_start_backup
+    main_window.MainWindow.change_backup_destination = RealMainWindow_change_backup_destination
+    main_window.MainWindow.edit_excludes = RealMainWindow_edit_excludes
+    main_window.MainWindow.start_backup = RealMainWindow_start_backup
 
 # ============================================================
 print("=== Phase JJ: archive-row and restore-row de-emphasis (Delete/Restore Directly) ===")
@@ -2266,7 +2266,7 @@ if win_ii is not None:
     check("Phase JJ: archive management uses native styling",
           win_ii.archive_actions_button.styleSheet() == "")
 
-jj_picker = main.ItemPicker("hint")
+jj_picker = main_window.ItemPicker("hint")
 check("Phase JJ: Restore Safely is relabeled",
       jj_picker.btn_restore_safe.text() == "Restore safely")
 check("Phase JJ: Restore Directly is relabeled with an ellipsis (opens a dialog)",
@@ -2275,7 +2275,7 @@ check("Phase JJ: btn_restore_direct is no longer permanently colored",
       not hasattr(jj_picker, "btn_restore_direct"))
 
 # ============================================================
-kk_picker = main.ItemPicker("hint")
+kk_picker = main_window.ItemPicker("hint")
 kk_picker.view_mode.setCurrentIndex(1)
 check("View selector switches to list", not kk_picker._icon_mode)
 kk_picker.set_icon_view()
@@ -2300,13 +2300,13 @@ r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", MM_REPO], env
 check("Phase MM setup: init repo", r.returncode == 0, r.stderr)
 r = subprocess.run(["borg", "create", f"{MM_REPO}::archive1", MM_SRC], env=env_with("phase-mm-passphrase"), capture_output=True, text=True)
 check("Phase MM setup: create archive1", r.returncode == 0, r.stderr)
-main.PASSFILE = f"{mm_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+main_window.PASSFILE = f"{mm_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-mm-passphrase")
-main._session_passphrase_override = None
+main_window._session_passphrase_override = None
 
 # --- fetch/apply split: a real fetch produces correct results ---
-mm_worker = main.StatusQueryWorker(MM_REPO)
+mm_worker = main_window.StatusQueryWorker(MM_REPO)
 mm_events = []
 mm_worker.finished_result.connect(lambda repo, info, listing, cancelled: mm_events.append((repo, info, listing, cancelled)))
 mm_worker.run()  # direct call, not .start() - synchronous, no thread needed for this check
@@ -2316,9 +2316,9 @@ check("Phase MM: the real listing actually contains the archive that's really th
       any(a["name"] == "archive1" for a in mm_events[0][2].get("archives", [])))
 
 check("Phase MM: _apply_archive_listing exists (replaces the old refresh_archives)",
-      hasattr(main.MainWindow, "_apply_archive_listing"))
+      hasattr(main_window.MainWindow, "_apply_archive_listing"))
 check("Phase MM: refresh_archives is genuinely gone, not left as a redundant second path",
-      not hasattr(main.MainWindow, "refresh_archives"))
+      not hasattr(main_window.MainWindow, "refresh_archives"))
 
 # --- genuinely cancellable: stop() actually interrupts an in-flight call,
 # not just something that happened to not be running yet ---
@@ -2332,7 +2332,7 @@ mm_fake_borg = f"{mm_slow_dir}/borg"
 with open(mm_fake_borg, "w") as f:
     f.write("#!/bin/bash\nsleep 20\necho '{}'\n")
 os.chmod(mm_fake_borg, 0o755)
-mm_worker2 = main.StatusQueryWorker(MM_REPO)
+mm_worker2 = main_window.StatusQueryWorker(MM_REPO)
 mm_original_path = os.environ.get("PATH", "")
 os.environ["PATH"] = f"{mm_slow_dir}:{mm_original_path}"
 try:
@@ -2373,7 +2373,7 @@ mm_timeout_borg = f"{mm_timeout_dir}/borg"
 with open(mm_timeout_borg, "w") as f:
     f.write("#!/bin/bash\nsleep 5\necho '{}'\n")  # sleeps far longer than the 0.3s timeout below
 os.chmod(mm_timeout_borg, 0o755)
-mm_worker3 = main.StatusQueryWorker(MM_REPO, timeout=0.3)
+mm_worker3 = main_window.StatusQueryWorker(MM_REPO, timeout=0.3)
 os.environ["PATH"] = f"{mm_timeout_dir}:{mm_original_path}"
 try:
     mm_worker3.start()
@@ -2402,11 +2402,11 @@ finally:
 
 # --- stale-result discard: a result for a repo that's no longer REPO gets
 # dropped; a result for the current REPO still gets applied normally ---
-RealCONFIG_destination_mm = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase MM Destination", "repo": MM_REPO}
-main.MOUNTPOINT = f"{mm_dir}/mount"
+RealCONFIG_destination_mm = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase MM Destination", "repo": MM_REPO}
+main_window.MOUNTPOINT = f"{mm_dir}/mount"
 try:
-    win_mm = main.MainWindow()
+    win_mm = main_window.MainWindow()
     check("Phase MM: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase MM: a real MainWindow() constructs without raising", False, repr(e))
@@ -2449,7 +2449,7 @@ if win_mm is not None:
           win_mm.lbl_repo.text() == "1 archives, 0.00 GB deduplicated", win_mm.lbl_repo.text())
     check("Phase MM: ...and the archive combo IS repopulated for a current-repo result",
           "archive1" in [win_mm.archive_combo.itemText(i) for i in range(win_mm.archive_combo.count())])
-main.CONFIG["destination"] = RealCONFIG_destination_mm
+main_window.CONFIG["destination"] = RealCONFIG_destination_mm
 
 # ============================================================
 print("=== Phase NN: real MainWindow wiring - dispatch, 'Checking...', pre-emption, closeEvent ===")
@@ -2463,15 +2463,15 @@ os.makedirs(nn_dir)
 NN_REPO = f"{nn_dir}/repo"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", NN_REPO], env=env_with("phase-nn-passphrase"), capture_output=True, text=True)
 check("Phase NN setup: init repo", r.returncode == 0, r.stderr)
-RealCONFIG_destination_nn = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase NN Destination", "repo": NN_REPO}
-main.PASSFILE = f"{nn_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_nn = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase NN Destination", "repo": NN_REPO}
+main_window.PASSFILE = f"{nn_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-nn-passphrase")
-main.MOUNTPOINT = f"{nn_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{nn_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_nn = main.MainWindow()
+    win_nn = main_window.MainWindow()
     check("Phase NN: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase NN: a real MainWindow() constructs without raising", False, repr(e))
@@ -2560,11 +2560,11 @@ if win_nn is not None:
     # important for change_backup_destination(), which would otherwise
     # open a real DestinationTypeDialog - the exact un-stubbed-dialog hang
     # class that bit Phase CC and nearly bit Phase II earlier this round.
-    RealMainWindow_stop_status_query = main.MainWindow._stop_status_query
+    RealMainWindow_stop_status_query = main_window.MainWindow._stop_status_query
     nn_stop_calls = []
-    main.MainWindow._stop_status_query = lambda self: nn_stop_calls.append(True)
-    main.QMessageBox = StubQMessageBox
-    RealDestinationTypeDialog_nn = main.DestinationTypeDialog
+    main_window.MainWindow._stop_status_query = lambda self: nn_stop_calls.append(True)
+    main_window.QMessageBox = StubQMessageBox
+    RealDestinationTypeDialog_nn = main_window.DestinationTypeDialog
 
     class ImmediatelyCancelledDestinationTypeDialog:
         chosen = None
@@ -2573,20 +2573,20 @@ if win_nn is not None:
             pass
 
         def exec(self):
-            return main.QDialog.Rejected  # the correct enum type, unlike Accepted
+            return main_window.QDialog.Rejected  # the correct enum type, unlike Accepted
 
-    main.DestinationTypeDialog = ImmediatelyCancelledDestinationTypeDialog
+    main_window.DestinationTypeDialog = ImmediatelyCancelledDestinationTypeDialog
     try:
         # start_backup(): drive it down the "destination unavailable" early
         # return, right after the pre-emption call
         win_nn.archive_combo.clear()
-        RealCONFIG_destination_nn_temp = dict(main.CONFIG["destination"])
-        main.CONFIG["destination"] = {"type": "other", "label": "Phase NN Unavailable", "repo": f"{nn_dir}/does-not-exist"}
+        RealCONFIG_destination_nn_temp = dict(main_window.CONFIG["destination"])
+        main_window.CONFIG["destination"] = {"type": "other", "label": "Phase NN Unavailable", "repo": f"{nn_dir}/does-not-exist"}
         win_nn.start_backup()
         check("Phase NN: start_backup() pre-empts a passive status query before its own real work",
               nn_stop_calls == [True])
         nn_stop_calls.clear()
-        main.CONFIG["destination"] = RealCONFIG_destination_nn_temp
+        main_window.CONFIG["destination"] = RealCONFIG_destination_nn_temp
 
         # delete_current_archive(): drive it down the "no archive selected"
         # early return
@@ -2603,9 +2603,9 @@ if win_nn is not None:
         check("Phase NN: change_backup_destination() pre-empts a passive status query before its own real work",
               nn_stop_calls == [True])
     finally:
-        main.MainWindow._stop_status_query = RealMainWindow_stop_status_query
-        main.QMessageBox = RealQMessageBox
-        main.DestinationTypeDialog = RealDestinationTypeDialog_nn
+        main_window.MainWindow._stop_status_query = RealMainWindow_stop_status_query
+        main_window.QMessageBox = RealQMessageBox
+        main_window.DestinationTypeDialog = RealDestinationTypeDialog_nn
 
     # --- closeEvent: a real QThread that's still running must not be
     # destroyed - a fake worker with controllable isRunning()/stop()/
@@ -2630,13 +2630,13 @@ if win_nn is not None:
     # QMessageBox.warning() - must be stubbed for these two calls too, not
     # just the pre-emption block above. Missing this the first time around
     # was the exact same un-stubbed-real-dialog hang class as Phase CC and
-    # the near-miss in Phase II, just a third instance of it: main.QMessageBox
+    # the near-miss in Phase II, just a third instance of it: main_window.QMessageBox
     # had already been restored to the real class by the finally: block
     # above by the time these two closeEvent() calls ran, so the first one
     # (wait_succeeds=False, which reaches the warning) hung the whole suite
     # on a real modal with no one to click it - caught by watching an
     # unbuffered run live, not by reading the code, same as before.
-    main.QMessageBox = StubQMessageBox
+    main_window.QMessageBox = StubQMessageBox
     try:
         win_nn.status_worker = _FakeStuckStatusWorker(wait_succeeds=False)
         nn_close_event_1 = QCloseEvent()
@@ -2657,8 +2657,8 @@ if win_nn is not None:
         check("Phase NN: closeEvent() proceeds (doesn't ignore) once the status query stops in time",
               nn_close_event_2.isAccepted())
     finally:
-        main.QMessageBox = RealQMessageBox
-main.CONFIG["destination"] = RealCONFIG_destination_nn
+        main_window.QMessageBox = RealQMessageBox
+main_window.CONFIG["destination"] = RealCONFIG_destination_nn
 
 # ============================================================
 print("=== Phase OO: UI thread stays responsive during a slow status query ===")
@@ -2680,7 +2680,7 @@ with open(oo_fake_borg, "w") as f:
     f.write("#!/bin/bash\nsleep 0.4\necho '{}'\n")
 os.chmod(oo_fake_borg, 0o755)
 
-oo_worker = main.StatusQueryWorker("/phase-oo/fake-repo")
+oo_worker = main_window.StatusQueryWorker("/phase-oo/fake-repo")
 oo_original_path = os.environ.get("PATH", "")
 os.environ["PATH"] = f"{oo_dir}:{oo_original_path}"
 
@@ -2725,12 +2725,12 @@ print("    phases, not three new elaborate ones, per that same reviewer's explic
 
 
 class PPHeadlineProbe(QWidget):
-    _apply_status_headline = main.MainWindow._apply_status_headline
+    _apply_status_headline = main_window.MainWindow._apply_status_headline
 
     def __init__(self):
         super().__init__()
-        self.lbl_headline = main.QLabel()
-        from keep_ui.status_icons import SuccessBadge
+        self.lbl_headline = main_window.QLabel()
+        from keep_backup.ui.status_icons import SuccessBadge
         self.headline_icon = SuccessBadge("never", 48)
 
 
@@ -2768,8 +2768,8 @@ check("Phase PP: success badge is only green for successful backup",
       pp_unavailable.headline_icon.state() == "error" and
       pp_never.headline_icon.state() == "never")
 
-pp_content = main.QLabel("real content")
-pp_section = main.DisclosureSection("Show X", "Hide X", pp_content)
+pp_content = main_window.QLabel("real content")
+pp_section = main_window.DisclosureSection("Show X", "Hide X", pp_content)
 check("Phase PP: DisclosureSection starts collapsed (content hidden, toggle unchecked, closed-text showing)",
       pp_content.isHidden() and not pp_section.toggle.isChecked() and pp_section.toggle.text() == "Show X")
 pp_section.set_expanded(True)
@@ -2795,35 +2795,35 @@ print("    reading the rendered app and the real backup script, not just the dif
 
 # --- short_path: pure function, no MainWindow needed ---
 check("Phase QQ: short_path keeps the last 2 components, prefixed to show truncation",
-      main.short_path("/home/alice/Documents/Project/file.psd") == ".../Project/file.psd")
+      main_window.short_path("/home/alice/Documents/Project/file.psd") == ".../Project/file.psd")
 check("Phase QQ: short_path with segments=1 keeps just the filename",
-      main.short_path("/home/alice/Documents/Project/file.psd", segments=1) == ".../file.psd")
+      main_window.short_path("/home/alice/Documents/Project/file.psd", segments=1) == ".../file.psd")
 check("Phase QQ: short_path on a path that's already short enough shows it exactly, no truncation prefix",
-      main.short_path("file.psd") == "file.psd")
+      main_window.short_path("file.psd") == "file.psd")
 check("Phase QQ: short_path on a 2-component path shows it exactly (nothing to truncate)",
-      main.short_path("Project/file.psd") == "Project/file.psd")
+      main_window.short_path("Project/file.psd") == "Project/file.psd")
 
 # --- CURRENT_PATH_RE / STAGE_MARKERS: the actual parsing logic pump() uses ---
 qq_sample_progress = "12.34 GB O 5.67 GB C 3.21 GB D 1234 N /home/alice/Documents/Project/file.psd"
-qq_m = main.CURRENT_PATH_RE.search(qq_sample_progress)
+qq_m = main_window.CURRENT_PATH_RE.search(qq_sample_progress)
 check("Phase QQ: CURRENT_PATH_RE extracts the real current-file path from a realistic raw progress line",
       qq_m is not None and qq_m.group(1).strip() == "/home/alice/Documents/Project/file.psd", qq_m)
 check("Phase QQ: STAGE_MARKERS maps the real script's prune marker to the right human text",
-      next(t for m, t in main.STAGE_MARKERS if m in "2026-09-14T12:00:00 running borg prune") == "Cleaning up old backups…")
+      next(t for m, t in main_window.STAGE_MARKERS if m in "2026-09-14T12:00:00 running borg prune") == "Cleaning up old backups…")
 check("Phase QQ: STAGE_MARKERS maps the real script's compact marker to the right human text",
-      next(t for m, t in main.STAGE_MARKERS if m in "2026-09-14T12:00:00 running borg compact") == "Reclaiming space…")
+      next(t for m, t in main_window.STAGE_MARKERS if m in "2026-09-14T12:00:00 running borg compact") == "Reclaiming space…")
 check("Phase QQ: create stage has an initial label before per-file progress arrives",
-      ("running borg create", "Backing up…") in main.STAGE_MARKERS)
+      ("running borg create", "Backing up…") in main_window.STAGE_MARKERS)
 
 # --- BackupWorker actually emits the stage signal from real log content,
 # not just that the marker table itself is correct in isolation ---
-qq_worker = main.BackupWorker()
+qq_worker = main_window.BackupWorker()
 qq_stage_events = []
 qq_worker.stage.connect(lambda text: qq_stage_events.append(text))
-qq_log_lines, qq_latest_progress, qq_buf = main.collapse_progress_output(
+qq_log_lines, qq_latest_progress, qq_buf = main_window.collapse_progress_output(
     "2026-09-14T12:00:00 running borg prune\n2026-09-14T12:00:05 running borg compact\n", "")
 for line in qq_log_lines:
-    for marker, stage_text in main.STAGE_MARKERS:
+    for marker, stage_text in main_window.STAGE_MARKERS:
         if marker in line:
             qq_worker.stage.emit(stage_text)
             break
@@ -2831,8 +2831,8 @@ check("Phase QQ: real log lines for prune then compact fire the stage signal twi
       qq_stage_events == ["Cleaning up old backups…", "Reclaiming space…"], qq_stage_events)
 
 # --- HelpDialog text no longer references the pre-Round-1 button labels ---
-qq_help = main.HelpDialog()
-qq_help_text = " ".join(lbl.text() for lbl in qq_help.findChildren(main.QLabel) if lbl.text())
+qq_help = main_window.HelpDialog()
+qq_help_text = " ".join(lbl.text() for lbl in qq_help.findChildren(main_window.QLabel) if lbl.text())
 check("Phase QQ: HelpDialog no longer says the old 'Restore Picked (safe...)' label",
       "Restore Picked" not in qq_help_text, qq_help_text[:200])
 check("Phase QQ: HelpDialog references the actual current button labels instead",
@@ -2854,11 +2854,11 @@ qq_help.close()
 # constructing the widget) rather than trusting the fix on isolated-variant
 # evidence alone. ---
 qq_disclosure_container = QWidget()
-qq_disclosure_container.mount_coordinator = main.MountCoordinator()
-qq_disclosure_layout = main.QVBoxLayout(qq_disclosure_container)
+qq_disclosure_container.mount_coordinator = main_window.MountCoordinator()
+qq_disclosure_layout = main_window.QVBoxLayout(qq_disclosure_container)
 qq_disclosure_layout.setContentsMargins(0, 0, 0, 0)
-qq_disclosure_content = main.QPlainTextEdit()
-qq_disclosure_section = main.DisclosureSection("Show log", "Hide log", qq_disclosure_content)
+qq_disclosure_content = main_window.QPlainTextEdit()
+qq_disclosure_section = main_window.DisclosureSection("Show log", "Hide log", qq_disclosure_content)
 qq_disclosure_layout.addWidget(qq_disclosure_section, 1)
 qq_disclosure_container.resize(300, 700)
 qq_disclosure_container.show()
@@ -2892,15 +2892,15 @@ check("Phase QQ setup: init repo", r.returncode == 0, r.stderr)
 r = subprocess.run(["borg", "create", f"{QQ_PRUNED_REPO}::real_archive", QQ_PRUNED_SRC], env=env_with("phase-qq-pruned-pw"), capture_output=True, text=True)
 check("Phase QQ setup: create real_archive", r.returncode == 0, r.stderr)
 
-RealCONFIG_destination_qq = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase QQ Pruned Destination", "repo": QQ_PRUNED_REPO}
-main.PASSFILE = f"{qq_pruned_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_qq = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase QQ Pruned Destination", "repo": QQ_PRUNED_REPO}
+main_window.PASSFILE = f"{qq_pruned_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-qq-pruned-pw")
-main.MOUNTPOINT = f"{qq_pruned_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{qq_pruned_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_qq = main.MainWindow()
+    win_qq = main_window.MainWindow()
     check("Phase QQ: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase QQ: a real MainWindow() constructs without raising", False, repr(e))
@@ -2919,7 +2919,7 @@ if win_qq is not None:
     win_qq.archive_combo.addItem("stale_pruned_archive")
     win_qq.archive_combo.blockSignals(False)
 
-    main.QMessageBox = StubQMessageBox
+    main_window.QMessageBox = StubQMessageBox
     StubQMessageBox.calls = []
     try:
         qq_mount_result = win_qq.ensure_mounted()
@@ -2928,7 +2928,7 @@ if win_qq is not None:
             for _ in range(10):
                 app.processEvents()
     finally:
-        main.QMessageBox = RealQMessageBox
+        main_window.QMessageBox = RealQMessageBox
 
     check("Phase QQ: ensure_mounted() reports failure for a since-pruned archive, not false success",
           qq_mount_result is False)
@@ -2940,7 +2940,7 @@ if win_qq is not None:
           "real_archive" in [win_qq.archive_combo.itemText(i) for i in range(win_qq.archive_combo.count())])
     check("Phase QQ: nothing got left in a falsely-mounted state",
           win_qq.mounted is False)
-main.CONFIG["destination"] = RealCONFIG_destination_qq
+main_window.CONFIG["destination"] = RealCONFIG_destination_qq
 
 print("=== Phase RR: friendly date/time formatting (real user report - raw ISO 8601")
 print("    timestamps like '2026-09-14T22:07:34+08:00' read as 'military time') ===")
@@ -2948,39 +2948,39 @@ print("    timestamps like '2026-09-14T22:07:34+08:00' read as 'military time') 
 # --- friendly_timestamp: the two ISO-ish raw sources (date -Is w/ offset
 # from backup/maintenance logs, and Borg's own naive-local archive time) ---
 check("Phase RR: friendly_timestamp reformats a date -Is timestamp (offset, from backup/maintenance logs) away from raw ISO",
-      "2026-09-14T22:24:15" not in main.friendly_timestamp("2026-09-14T22:24:15+08:00"))
+      "2026-09-14T22:24:15" not in main_window.friendly_timestamp("2026-09-14T22:24:15+08:00"))
 check("Phase RR: friendly_timestamp reformats Borg's own naive-local archive time (no offset, microseconds) away from raw ISO",
-      "2026-09-14T19:25:53" not in main.friendly_timestamp("2026-09-14T19:25:53.000000"))
+      "2026-09-14T19:25:53" not in main_window.friendly_timestamp("2026-09-14T19:25:53.000000"))
 check("Phase RR: friendly_timestamp passes through an empty string unchanged",
-      main.friendly_timestamp("") == "")
+      main_window.friendly_timestamp("") == "")
 check("Phase RR: friendly_timestamp passes through None unchanged (falsy guard, no crash)",
-      main.friendly_timestamp(None) is None)
+      main_window.friendly_timestamp(None) is None)
 check("Phase RR: friendly_timestamp passes through genuinely unparseable text unchanged rather than hiding it",
-      main.friendly_timestamp("not-a-date") == "not-a-date")
+      main_window.friendly_timestamp("not-a-date") == "not-a-date")
 
 # --- friendly_systemd_timestamp: systemctl show's own format, including the
 # real parse failure this project's own repro caught before shipping - a
 # bare 2-digit offset ('+08', not '+0800') that Python's %z rejects outright
 # unless padded first ---
 check("Phase RR: friendly_systemd_timestamp reformats systemctl show's real 'Tue 2026-09-15 04:04:52 +08' output (bare 2-digit offset) away from raw form",
-      "04:04:52" not in main.friendly_systemd_timestamp("Tue 2026-09-15 04:04:52 +08"))
+      "04:04:52" not in main_window.friendly_systemd_timestamp("Tue 2026-09-15 04:04:52 +08"))
 check("Phase RR: friendly_systemd_timestamp also accepts a properly-padded 4-digit offset",
-      "04:04:52" not in main.friendly_systemd_timestamp("Tue 2026-09-15 04:04:52 +0800"))
+      "04:04:52" not in main_window.friendly_systemd_timestamp("Tue 2026-09-15 04:04:52 +0800"))
 check("Phase RR: friendly_systemd_timestamp passes through 'n/a' unchanged (timer has no scheduled next run)",
-      main.friendly_systemd_timestamp("n/a") == "n/a")
+      main_window.friendly_systemd_timestamp("n/a") == "n/a")
 check("Phase RR: friendly_systemd_timestamp passes through an empty string unchanged",
-      main.friendly_systemd_timestamp("") == "")
+      main_window.friendly_systemd_timestamp("") == "")
 
 # --- friendly_datetime: every relative-day branch, driven directly with
 # real datetime objects rather than re-parsed strings ---
 rr_now = datetime.now()
 check("Phase RR: friendly_datetime labels today as 'Today at <time>'",
-      main.friendly_datetime(rr_now.replace(hour=22, minute=7)).startswith("Today at "))
+      main_window.friendly_datetime(rr_now.replace(hour=22, minute=7)).startswith("Today at "))
 check("Phase RR: friendly_datetime labels yesterday as 'Yesterday at <time>'",
-      main.friendly_datetime((rr_now - timedelta(days=1)).replace(hour=9, minute=5)).startswith("Yesterday at "))
+      main_window.friendly_datetime((rr_now - timedelta(days=1)).replace(hour=9, minute=5)).startswith("Yesterday at "))
 check("Phase RR: friendly_datetime labels tomorrow as 'Tomorrow at <time>'",
-      main.friendly_datetime((rr_now + timedelta(days=1)).replace(hour=4, minute=4)).startswith("Tomorrow at "))
-rr_3_days_ago = main.friendly_datetime((rr_now - timedelta(days=3)).replace(hour=15, minute=22))
+      main_window.friendly_datetime((rr_now + timedelta(days=1)).replace(hour=4, minute=4)).startswith("Tomorrow at "))
+rr_3_days_ago = main_window.friendly_datetime((rr_now - timedelta(days=3)).replace(hour=15, minute=22))
 check("Phase RR: friendly_datetime labels a day earlier this week by weekday name, not 'Today'/'Yesterday'",
       " at " in rr_3_days_ago and "Today" not in rr_3_days_ago and "Yesterday" not in rr_3_days_ago, rr_3_days_ago)
 # 20 days ago instead of a hardcoded month/day - deterministically outside
@@ -2989,7 +2989,7 @@ check("Phase RR: friendly_datetime labels a day earlier this week by weekday nam
 # date would silently test the WRONG branch - the "different year" one -
 # if ever run in the first 20 days of January)
 rr_20_days_ago = (rr_now - timedelta(days=20)).replace(hour=14, minute=30)
-rr_older_same_year = main.friendly_datetime(rr_20_days_ago)
+rr_older_same_year = main_window.friendly_datetime(rr_20_days_ago)
 if rr_20_days_ago.year == rr_now.year:
     check("Phase RR: friendly_datetime on an older date in the current year omits the year ('Mon D at H:MM AM/PM')",
           re.match(r"^[A-Z][a-z]{2} \d{1,2} at ", rr_older_same_year) is not None, rr_older_same_year)
@@ -2997,7 +2997,7 @@ else:
     check("Phase RR: friendly_datetime 20 days ago crossed into a prior year, so includes the year",
           str(rr_20_days_ago.year) in rr_older_same_year, rr_older_same_year)
 rr_way_old = datetime(rr_now.year - 2, 3, 2, 14, 30)
-rr_way_old_text = main.friendly_datetime(rr_way_old)
+rr_way_old_text = main_window.friendly_datetime(rr_way_old)
 check("Phase RR: friendly_datetime on a date from a prior year includes the year",
       str(rr_way_old.year) in rr_way_old_text, rr_way_old_text)
 check("Phase RR: no friendly_datetime output ever contains a raw ISO 'T' date/time separator",
@@ -3018,15 +3018,15 @@ check("Phase RR setup: init repo", r.returncode == 0, r.stderr)
 r = subprocess.run(["borg", "create", f"{RR_REPO}::rr_archive", RR_SRC], env=env_with("phase-rr-pw"), capture_output=True, text=True)
 check("Phase RR setup: create rr_archive", r.returncode == 0, r.stderr)
 
-RealCONFIG_destination_rr = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase RR Destination", "repo": RR_REPO}
-main.PASSFILE = f"{rr_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_rr = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase RR Destination", "repo": RR_REPO}
+main_window.PASSFILE = f"{rr_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-rr-pw")
-main.MOUNTPOINT = f"{rr_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{rr_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_rr = main.MainWindow()
+    win_rr = main_window.MainWindow()
     check("Phase RR: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase RR: a real MainWindow() constructs without raising", False, repr(e))
@@ -3049,7 +3049,7 @@ if win_rr is not None:
     rr_next_text = win_rr.lbl_next.text()
     check("Phase RR: the 'next backup' label is never raw systemd text (day-name-prefixed ISO date)",
           not re.match(r"^[A-Z][a-z]{2} \d{4}-\d{2}-\d{2}", rr_next_text), rr_next_text)
-main.CONFIG["destination"] = RealCONFIG_destination_rr
+main_window.CONFIG["destination"] = RealCONFIG_destination_rr
 
 print("=== Phase SS: 6th reviewer pass - failed-backup wording, progress-line eliding, no-timestamp headline ===")
 print("    (a real live-use report: 'why does the UI show backup failed?' turned out to be the")
@@ -3065,15 +3065,15 @@ SS_REPO = f"{ss_dir}/repo"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", SS_REPO], env=env_with("phase-ss-pw"), capture_output=True, text=True)
 check("Phase SS setup: init repo", r.returncode == 0, r.stderr)
 
-RealCONFIG_destination_ss = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase SS Destination", "repo": SS_REPO}
-main.PASSFILE = f"{ss_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_ss = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase SS Destination", "repo": SS_REPO}
+main_window.PASSFILE = f"{ss_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-ss-pw")
-main.MOUNTPOINT = f"{ss_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{ss_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_ss = main.MainWindow()
+    win_ss = main_window.MainWindow()
     check("Phase SS: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase SS: a real MainWindow() constructs without raising", False, repr(e))
@@ -3089,7 +3089,7 @@ if win_ss is not None:
     # now (Round 4's Show Log split) and never auto-expanded on failure
     # (confirmed: on_backup_finished doesn't touch log_section at all) -
     # "check the log above" is stale, pointing at something not shown ---
-    main.QMessageBox = StubQMessageBox
+    main_window.QMessageBox = StubQMessageBox
     StubQMessageBox.calls = []
     win_ss.worker = types.SimpleNamespace(user_stopped=False)
     win_ss._was_browsing_before_backup = False
@@ -3101,7 +3101,7 @@ if win_ss is not None:
             for _ in range(10):
                 app.processEvents()
     finally:
-        main.QMessageBox = RealQMessageBox
+        main_window.QMessageBox = RealQMessageBox
     check("Phase SS: a genuinely failed backup (not user-stopped) shows a warning",
           any(c[0] == "warning" for c in StubQMessageBox.calls), StubQMessageBox.calls)
     check("Phase SS: the warning no longer claims the log is visible ('above') - it's collapsed by default now",
@@ -3149,7 +3149,7 @@ if win_ss is not None:
     win_ss._apply_status_headline(True, "ok", "2026-09-14T04:00:00")
     check("Phase SS: the healthy headline no longer carries a duplicate timestamp",
           win_ss.lbl_headline.text() == "Last backup completed successfully", win_ss.lbl_headline.text())
-main.CONFIG["destination"] = RealCONFIG_destination_ss
+main_window.CONFIG["destination"] = RealCONFIG_destination_ss
 
 print("=== Phase TT: a manually Stopped backup is distinguished from a genuinely FAILED one ===")
 print("    (7th reviewer pass: last_backup_attempt_status() only ever checked for the success")
@@ -3173,14 +3173,14 @@ echo "$(date -Is) backup completed successfully"
 ''')
 os.chmod(tt_fake_script, 0o755)
 
-RealLOGDIR_tt = main.LOGDIR
-RealBACKUP_SCRIPT_tt = main.BACKUP_SCRIPT
-RealBACKUP_ENGINE_tt = main.CONFIG.get("backup_engine")
-main.CONFIG["backup_engine"] = "external"
-main.LOGDIR = tt_logdir
-main.BACKUP_SCRIPT = tt_fake_script
+RealLOGDIR_tt = main_window.LOGDIR
+RealBACKUP_SCRIPT_tt = main_window.BACKUP_SCRIPT
+RealBACKUP_ENGINE_tt = main_window.CONFIG.get("backup_engine")
+main_window.CONFIG["backup_engine"] = "external"
+main_window.LOGDIR = tt_logdir
+main_window.BACKUP_SCRIPT = tt_fake_script
 try:
-    tt_worker = main.BackupWorker()
+    tt_worker = main_window.BackupWorker()
     tt_events = []
     tt_worker.finished_ok.connect(lambda ok: tt_events.append(ok))
     tt_worker.start()
@@ -3220,7 +3220,7 @@ try:
         check("Phase TT: BackupWorker.run() appended the STOPPED BY USER marker to the SAME log file",
               "STOPPED BY USER" in tt_log_text, tt_log_text)
 
-        tt_verdict, tt_ts = main.last_backup_attempt_status()
+        tt_verdict, tt_ts = main_window.last_backup_attempt_status()
         check("Phase TT: a completely fresh last_backup_attempt_status() read (no shared state with the worker object) reports 'stopped', not 'FAILED'",
               tt_verdict == "stopped", tt_verdict)
 
@@ -3249,7 +3249,7 @@ try:
         for tt_immediate_attempt in range(5):
             for f in os.listdir(tt_logdir):
                 os.remove(f"{tt_logdir}/{f}")
-            tt_imm_worker = main.BackupWorker()
+            tt_imm_worker = main_window.BackupWorker()
             tt_imm_events = []
             tt_imm_worker.finished_ok.connect(lambda ok: tt_imm_events.append(ok))
             tt_imm_worker.start()
@@ -3283,7 +3283,7 @@ try:
                   "backup completed successfully" not in tt_imm_log_text, tt_imm_log_text)
             check("Phase TT (immediate stop): the STOPPED BY USER marker is still present via the fallback lookup, even though the 500ms poll never resolved log_path in time",
                   "STOPPED BY USER" in tt_imm_log_text, tt_imm_log_text)
-            tt_imm_verdict, _ = main.last_backup_attempt_status()
+            tt_imm_verdict, _ = main_window.last_backup_attempt_status()
             check("Phase TT (immediate stop): last_backup_attempt_status() reports 'stopped', not 'FAILED' - this is the exact race the reviewer flagged",
                   tt_imm_verdict == "stopped", tt_imm_verdict)
 
@@ -3301,19 +3301,19 @@ try:
         tt_info = subprocess.run(["borg", "info", "--json", TT_REPO],
                                  env=env_with("phase-tt-pw"), capture_output=True, text=True)
         tt_repo_id = json.loads(tt_info.stdout)["repository"]["id"]
-        tt_latest_path = Path(main.latest_log("backup"))
+        tt_latest_path = Path(main_window.latest_log("backup"))
         tt_latest_path.write_text(tt_latest_path.read_text() +
                                   f"\n2026-09-14T04:00:00 Repository: {TT_REPO}\n"
                                   f"2026-09-14T04:00:00 Repository ID: {tt_repo_id}\n")
-        RealCONFIG_destination_tt = dict(main.CONFIG["destination"])
-        main.CONFIG["destination"] = {"type": "other", "label": "Phase TT Destination", "repo": TT_REPO}
-        main.PASSFILE = f"{tt_repo_dir}/passphrase"
-        with open(main.PASSFILE, "w") as f:
+        RealCONFIG_destination_tt = dict(main_window.CONFIG["destination"])
+        main_window.CONFIG["destination"] = {"type": "other", "label": "Phase TT Destination", "repo": TT_REPO}
+        main_window.PASSFILE = f"{tt_repo_dir}/passphrase"
+        with open(main_window.PASSFILE, "w") as f:
             f.write("phase-tt-pw")
-        main.MOUNTPOINT = f"{tt_repo_dir}/mount"
-        main._session_passphrase_override = None
+        main_window.MOUNTPOINT = f"{tt_repo_dir}/mount"
+        main_window._session_passphrase_override = None
         try:
-            win_tt = main.MainWindow()
+            win_tt = main_window.MainWindow()
             check("Phase TT: a real MainWindow() constructs without raising with a 'stopped' log present", True)
         except Exception as e:
             check("Phase TT: a real MainWindow() constructs without raising with a 'stopped' log present", False, repr(e))
@@ -3327,18 +3327,18 @@ try:
             # tt_ts is from the first stop; the immediate-stop variant above
             # writes a later log, so reusing tt_ts failed whenever the clock
             # minute rolled over between the two runs.
-            tt_latest_verdict, tt_latest_ts = main.last_backup_attempt_status()
+            tt_latest_verdict, tt_latest_ts = main_window.last_backup_attempt_status()
             check("Phase TT: the real 'Last attempt:' row reads 'stopped (<friendly time>)', not 'FAILED'",
                   tt_latest_verdict == "stopped"
-                  and win_tt.lbl_last_attempt.text() == f"stopped ({main.friendly_timestamp(tt_latest_ts)})",
+                  and win_tt.lbl_last_attempt.text() == f"stopped ({main_window.friendly_timestamp(tt_latest_ts)})",
                   win_tt.lbl_last_attempt.text())
             check("Phase TT: the real 'Last attempt:' row carries NO destructive styling for a stopped backup",
                   win_tt.lbl_last_attempt.property("role") != "error", win_tt.lbl_last_attempt.styleSheet())
-        main.CONFIG["destination"] = RealCONFIG_destination_tt
+        main_window.CONFIG["destination"] = RealCONFIG_destination_tt
 finally:
-    main.LOGDIR = RealLOGDIR_tt
-    main.BACKUP_SCRIPT = RealBACKUP_SCRIPT_tt
-    main.CONFIG["backup_engine"] = RealBACKUP_ENGINE_tt
+    main_window.LOGDIR = RealLOGDIR_tt
+    main_window.BACKUP_SCRIPT = RealBACKUP_SCRIPT_tt
+    main_window.CONFIG["backup_engine"] = RealBACKUP_ENGINE_tt
 
 print("=== Phase UU: theme-dependent styling actually re-applies on a live system theme switch ===")
 print("    (real user report: the left panel's backdrop color stayed stuck at whatever theme was")
@@ -3364,15 +3364,15 @@ UU_REPO = f"{uu_dir}/repo"
 r = subprocess.run(["borg", "init", "--encryption=keyfile-blake2", UU_REPO], env=env_with("phase-uu-pw"), capture_output=True, text=True)
 check("Phase UU setup: init repo", r.returncode == 0, r.stderr)
 
-RealCONFIG_destination_uu = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase UU Destination", "repo": UU_REPO}
-main.PASSFILE = f"{uu_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_uu = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase UU Destination", "repo": UU_REPO}
+main_window.PASSFILE = f"{uu_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-uu-pw")
-main.MOUNTPOINT = f"{uu_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{uu_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_uu = main.MainWindow()
+    win_uu = main_window.MainWindow()
     check("Phase UU: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase UU: a real MainWindow() constructs without raising", False, repr(e))
@@ -3453,7 +3453,7 @@ if win_uu is not None:
     app.processEvents()
     check("Phase UU: an unrelated changeEvent (e.g. ActivationChange) does NOT trigger a re-style",
           win_uu.left_panel.styleSheet() == uu_left_qss_stable)
-main.CONFIG["destination"] = RealCONFIG_destination_uu
+main_window.CONFIG["destination"] = RealCONFIG_destination_uu
 
 print("=== Phase VV: Advanced (raw browse) restore gets the same mount-lifecycle/symlink guarantees ===")
 print("    (8th reviewer pass: the Apps/Projects restore paths already re-check the mount and")
@@ -3480,15 +3480,15 @@ check("Phase VV setup: init repo", r.returncode == 0, r.stderr)
 r = subprocess.run(["borg", "create", f"{VV_REPO}::archive1", VV_SRC], env=env_with("phase-vv-pw"), capture_output=True, text=True)
 check("Phase VV setup: create archive with a real symlink inside it", r.returncode == 0, r.stderr)
 
-RealCONFIG_destination_vv = dict(main.CONFIG["destination"])
-main.CONFIG["destination"] = {"type": "other", "label": "Phase VV Destination", "repo": VV_REPO}
-main.PASSFILE = f"{vv_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_vv = dict(main_window.CONFIG["destination"])
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase VV Destination", "repo": VV_REPO}
+main_window.PASSFILE = f"{vv_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-vv-pw")
-main.MOUNTPOINT = f"{vv_dir}/mount"
-main._session_passphrase_override = None
+main_window.MOUNTPOINT = f"{vv_dir}/mount"
+main_window._session_passphrase_override = None
 try:
-    win_vv = main.MainWindow()
+    win_vv = main_window.MainWindow()
     check("Phase VV: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase VV: a real MainWindow() constructs without raising", False, repr(e))
@@ -3503,7 +3503,7 @@ if win_vv is not None:
     vv_mount_ok = win_vv.ensure_mounted()
     check("Phase VV: initial ensure_mounted() succeeds", vv_mount_ok is True)
 
-    vv_symlink_idx = win_vv.fs_model.index(f"{main.MOUNTPOINT}/{os.path.relpath(vv_symlink_path, '/')}")
+    vv_symlink_idx = win_vv.fs_model.index(f"{main_window.MOUNTPOINT}/{os.path.relpath(vv_symlink_path, '/')}")
     check("Phase VV: the symlink's row is findable in the real tree", vv_symlink_idx.isValid())
 
     # --- tree selection touches the idle-unmount activity timer ---
@@ -3525,15 +3525,15 @@ if win_vv is not None:
     win_vv.ensure_mounted()
     app.processEvents()
     win_vv.tree.selectionModel().select(
-        win_vv.fs_model.index(f"{main.MOUNTPOINT}/{os.path.relpath(vv_symlink_path, '/')}"),
+        win_vv.fs_model.index(f"{main_window.MOUNTPOINT}/{os.path.relpath(vv_symlink_path, '/')}"),
         QItemSelectionModel.Select | QItemSelectionModel.Rows)
     app.processEvents()
     win_vv._unmount()  # simulate an idle-unmount happening AFTER selecting, right before Restore is clicked
     app.processEvents()
     check("Phase VV setup: genuinely unmounted immediately before calling restore_selected()", win_vv.mounted is False)
 
-    RealQFileDialog_vv = main.QFileDialog
-    RealQMessageBox_vv = main.QMessageBox
+    RealQFileDialog_vv = main_window.QFileDialog
+    RealQMessageBox_vv = main_window.QMessageBox
 
     class StubQFileDialog_vv:
         @staticmethod
@@ -3551,20 +3551,20 @@ if win_vv is not None:
         def warning(*a, **k):
             StubQMessageBox_vv.calls.append(("warning", a[2] if len(a) > 2 else ""))
 
-    main.QFileDialog = StubQFileDialog_vv
-    main.QMessageBox = StubQMessageBox_vv
+    main_window.QFileDialog = StubQFileDialog_vv
+    main_window.QMessageBox = StubQMessageBox_vv
     try:
         # _unmount() cleared the selection above (by design, verified already) -
         # re-select as a real user would after noticing the tree went blank
         win_vv.tree.selectionModel().select(
-            win_vv.fs_model.index(f"{main.MOUNTPOINT}/{os.path.relpath(vv_symlink_path, '/')}"),
+            win_vv.fs_model.index(f"{main_window.MOUNTPOINT}/{os.path.relpath(vv_symlink_path, '/')}"),
             QItemSelectionModel.Select | QItemSelectionModel.Rows)
         app.processEvents()
         win_vv.restore_selected()
         app.processEvents()
     finally:
-        main.QFileDialog = RealQFileDialog_vv
-        main.QMessageBox = RealQMessageBox_vv
+        main_window.QFileDialog = RealQFileDialog_vv
+        main_window.QMessageBox = RealQMessageBox_vv
 
     check("Phase VV: restore_selected() re-mounted the archive rather than silently failing/acting on a dead mount",
           win_vv.mounted is True)
@@ -3584,7 +3584,7 @@ if win_vv is not None:
     # this file removes the scratch directory but was never guaranteed to
     # unmount a live FUSE mount first. win_vv._unmount(), same as Phase WW.
     win_vv._unmount()
-main.CONFIG["destination"] = RealCONFIG_destination_vv
+main_window.CONFIG["destination"] = RealCONFIG_destination_vv
 
 print("=== Phase WW: a BROKEN symlink (valid archived object, target genuinely gone) restores correctly ===")
 print("    (9th reviewer pass: os.path.exists() follows symlinks, so a broken symlink - a legitimate")
@@ -3618,17 +3618,17 @@ check("Phase WW setup: create archive with a real broken symlink inside it", r.r
 # QFileSystemModel at all - build_app_catalog()/has_meaningful_content()
 # already correctly use islink() first, confirmed by reading them, so
 # this exercises purely the restore-time gating fix) ---
-RealCONFIG_destination_ww = dict(main.CONFIG["destination"])
-RealHOME_ww = main.HOME
-main.CONFIG["destination"] = {"type": "other", "label": "Phase WW Destination", "repo": WW_REPO}
-main.refresh_destination()
-main.PASSFILE = f"{ww_dir}/passphrase"
-with open(main.PASSFILE, "w") as f:
+RealCONFIG_destination_ww = dict(main_window.CONFIG["destination"])
+RealHOME_ww = main_window.HOME
+main_window.CONFIG["destination"] = {"type": "other", "label": "Phase WW Destination", "repo": WW_REPO}
+main_window.refresh_destination()
+main_window.PASSFILE = f"{ww_dir}/passphrase"
+with open(main_window.PASSFILE, "w") as f:
     f.write("phase-ww-pw")
-main.MOUNTPOINT = f"{ww_dir}/mount"
-main.HOME = ww_fake_home  # restore_checked_safe()'s dest_dir is HOME/Keep-Restored - never touch the real one
-main._session_passphrase_override = None
-os.makedirs(main.MOUNTPOINT, exist_ok=True)
+main_window.MOUNTPOINT = f"{ww_dir}/mount"
+main_window.HOME = ww_fake_home  # restore_checked_safe()'s dest_dir is HOME/Keep-Restored - never touch the real one
+main_window._session_passphrase_override = None
+os.makedirs(main_window.MOUNTPOINT, exist_ok=True)
 
 
 class WWDummySelf(QWidget):
@@ -3636,7 +3636,7 @@ class WWDummySelf(QWidget):
 
 
 ww_mount_owner = WWDummySelf()
-ww_mount_ok, ww_mount_stderr = main.MainWindow._attempt_mount(ww_mount_owner, "archive1")
+ww_mount_ok, ww_mount_stderr = main_window.MainWindow._attempt_mount(ww_mount_owner, "archive1")
 check("Phase WW: real mount succeeds", ww_mount_ok, ww_mount_stderr)
 
 ww_rel_path = os.path.relpath(ww_broken_link, "/")
@@ -3655,13 +3655,13 @@ class WWFakeCheckedItem:
 
 
 StubQMessageBox.calls = []
-main.QMessageBox = StubQMessageBox
+main_window.QMessageBox = StubQMessageBox
 try:
-    ww_picker = main.ItemPicker("hint", ensure_mounted_cb=lambda: True)
+    ww_picker = main_window.ItemPicker("hint", ensure_mounted_cb=lambda: True)
     ww_picker._checked_items = lambda: [WWFakeCheckedItem()]
     ww_picker.restore_checked_safe()
 finally:
-    main.QMessageBox = RealQMessageBox
+    main_window.QMessageBox = RealQMessageBox
 
 check("Phase WW: Safe Restore reports success (not a warning) for a broken symlink - it used to be silently skipped",
       not any(c[0] == "warning" for c in StubQMessageBox.calls), StubQMessageBox.calls)
@@ -3678,7 +3678,7 @@ if ww_restored:
 # machinery a second time for a mechanically identical change (the
 # reviewer's own "compact, no refactor" framing) ---
 check("Phase WW: restore_checked_direct()'s target-collection gate (lexists) admits the broken symlink",
-      os.path.lexists(f"{main.MOUNTPOINT}/{ww_rel_path}"))
+      os.path.lexists(f"{main_window.MOUNTPOINT}/{ww_rel_path}"))
 
 # --- Advanced tab (restore_selected()): tests the method's OWN lexists()
 # fix directly, using fs_model rooted at the containing directory (proven
@@ -3689,7 +3689,7 @@ check("Phase WW: restore_checked_direct()'s target-collection gate (lexists) adm
 try:
     # This fixture hands its manually mounted archive to a real controller.
     ww_mount_owner._browse_operation_lock.release()
-    ww_win = main.MainWindow()
+    ww_win = main_window.MainWindow()
     check("Phase WW: a real MainWindow() constructs without raising", True)
 except Exception as e:
     check("Phase WW: a real MainWindow() constructs without raising", False, repr(e))
@@ -3700,7 +3700,7 @@ if ww_win is not None:
         ww_win.status_worker.wait(5000)
         for _ in range(10):
             app.processEvents()
-    ww_mounted_broken = f"{main.MOUNTPOINT}/{ww_rel_path}"
+    ww_mounted_broken = f"{main_window.MOUNTPOINT}/{ww_rel_path}"
     ww_win.fs_model.setRootPath(os.path.dirname(ww_mounted_broken))
     ww_idx = ww_win.fs_model.index(ww_mounted_broken)
     for _ in range(20):
@@ -3726,16 +3726,16 @@ if ww_win is not None:
             def getExistingDirectory(*a, **k):
                 return ww_dest_dir
 
-        RealQFileDialog_ww = main.QFileDialog
+        RealQFileDialog_ww = main_window.QFileDialog
         StubQMessageBox.calls = []
-        main.QFileDialog = StubQFileDialog_ww
-        main.QMessageBox = StubQMessageBox
+        main_window.QFileDialog = StubQFileDialog_ww
+        main_window.QMessageBox = StubQMessageBox
         try:
             ww_win.restore_selected()
             app.processEvents()
         finally:
-            main.QFileDialog = RealQFileDialog_ww
-            main.QMessageBox = RealQMessageBox
+            main_window.QFileDialog = RealQFileDialog_ww
+            main_window.QMessageBox = RealQMessageBox
 
         check("Phase WW: Advanced restore_selected() reports success (not a warning) for a broken symlink",
               not any(c[0] == "warning" for c in StubQMessageBox.calls), StubQMessageBox.calls)
@@ -3756,13 +3756,13 @@ if ww_win is not None:
     # against exactly that failure mode recurring a third way.
     ww_win._unmount()
     StubQMessageBox.calls = []
-    main.QMessageBox = StubQMessageBox
+    main_window.QMessageBox = StubQMessageBox
     try:
         ww_win.close()
     finally:
-        main.QMessageBox = RealQMessageBox
-main.CONFIG["destination"] = RealCONFIG_destination_ww
-main.HOME = RealHOME_ww
+        main_window.QMessageBox = RealQMessageBox
+main_window.CONFIG["destination"] = RealCONFIG_destination_ww
+main_window.HOME = RealHOME_ww
 
 # ============================================================
 cleanup_scratch()

@@ -13,7 +13,7 @@ jobs:
       - name: Enable FUSE and build test environment
         run: |
           sudo modprobe fuse
-          docker build -f packaging/Dockerfile.test -t keep-validation .
+          docker build -f scripts/Dockerfile.test -t keep-validation .
       - name: Test Borg recovery and package installation
         run: |
           set -o pipefail

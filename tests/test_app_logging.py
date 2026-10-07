@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import app_logging
+from keep_backup.ui import app_logging
 
 class SessionLogTests(unittest.TestCase):
     def test_rotation_retention_and_private_permissions(self):
@@ -41,12 +41,12 @@ class SessionLogTests(unittest.TestCase):
     def test_launch_writes_start_ready_and_exit(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "config.json"
-            import consumer
+            from keep_backup.core import consumer
             settings = consumer.default_config(directory)
             settings["setup_complete"] = True
             config.write_text(json.dumps(settings))
             env = dict(os.environ, XDG_STATE_HOME=directory, KEEP_CONFIG_PATH=str(config), QT_QPA_PLATFORM="offscreen")
-            script = "from PySide6.QtWidgets import QApplication; QApplication.exec=lambda self: 0; import runpy; runpy.run_path('main.py',run_name='__main__')"
+            script = "from PySide6.QtWidgets import QApplication; QApplication.exec=lambda self: 0; import runpy; runpy.run_module('keep_backup',run_name='__main__')"
             result = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stderr)
             logs = list((Path(directory) / "keep/logs").glob("session-*.log"))

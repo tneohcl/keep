@@ -14,7 +14,7 @@ _STATE = tempfile.TemporaryDirectory()
 os.environ["KEEP_CONFIG_PATH"] = str(Path(_STATE.name) / "config.json")
 os.environ["XDG_STATE_HOME"] = str(Path(_STATE.name) / "state")
 
-import main  # noqa: E402
+from keep_backup.ui import main_window  # noqa: E402
 
 
 class LocalTime(unittest.TestCase):
@@ -28,17 +28,17 @@ class LocalTime(unittest.TestCase):
     # The clock's format follows the locale (6:25 AM here, 06:25:00 on CI),
     # so compare with the same moment written as naive local time.
     def test_utc_is_shown_in_local_time(self):
-        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14.753626+00:00"),
-                         main.friendly_datetime(datetime(2020, 9, 25, 6, 25, 14)))
+        self.assertEqual(main_window.friendly_timestamp("2020-09-24T22:25:14.753626+00:00"),
+                         main_window.friendly_datetime(datetime(2020, 9, 25, 6, 25, 14)))
 
     def test_local_offsets_and_naive_times_are_unchanged(self):
-        local = main.friendly_datetime(datetime(2020, 9, 24, 22, 25, 14))
-        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14+08:00"), local)
-        self.assertEqual(main.friendly_timestamp("2020-09-24T22:25:14.000000"), local)
+        local = main_window.friendly_datetime(datetime(2020, 9, 24, 22, 25, 14))
+        self.assertEqual(main_window.friendly_timestamp("2020-09-24T22:25:14+08:00"), local)
+        self.assertEqual(main_window.friendly_timestamp("2020-09-24T22:25:14.000000"), local)
 
     def test_today_is_judged_in_local_time(self):
         now = datetime.now().astimezone()
-        self.assertTrue(main.friendly_datetime(now.astimezone(timezone.utc)).startswith("Today at "))
+        self.assertTrue(main_window.friendly_datetime(now.astimezone(timezone.utc)).startswith("Today at "))
 
 
 if __name__ == "__main__":

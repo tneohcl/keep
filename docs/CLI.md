@@ -1,7 +1,8 @@
 # Keep CLI milestone 1
 
 `keep-cli` is an additive executable; `keep` still launches the desktop app.
-From a source checkout use `python3 cli.py`. Neither command execution nor its
+From a source checkout, run `python3 -m keep_backup.cli` with `src/` on `PYTHONPATH` (or from the
+checkout root, where `keep_backup.py` redirects to `src/`). Neither command execution nor its
 imports require Qt. The combined Debian package still depends on Qt for the GUI.
 
 ## Commands

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock
-from mount_service import MountCoordinator, MountState
+from keep_backup.core.mount_service import MountCoordinator, MountState
 
 class MountCoordinatorTests(unittest.TestCase):
     def test_reentry_and_exception_release(self):

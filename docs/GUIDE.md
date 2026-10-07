@@ -38,7 +38,7 @@ Normal users should not need to edit `config.json` by hand. The **Backup** menu 
 - **Change destination…** — choose the target location and adopt or create a Borg repository. New repos ask whether to use encryption; encrypted is the recommended default.
 - **Edit backup excludes…** — edit the exclude file used by the backup engine.
 
-Fresh configurations use the bundled `keep_backup.py` engine. Existing installations that already have a proven `backup_script` remain in compatibility mode until the user explicitly enables **Use Keep's built-in backup engine (recommended)** — this prevents an upgrade from silently replacing a working production backup pipeline.
+Fresh configurations use the bundled engine (`keep-backup`, `keep_backup/engine.py`). Existing installations that already have a proven `backup_script` remain in compatibility mode until the user explicitly enables **Use Keep's built-in backup engine (recommended)** — this prevents an upgrade from silently replacing a working production backup pipeline.
 
 On a brand-new install, Keep can launch without any `config.json`. A small first-run setup window links directly to **Backup Sources**, **Backup Destination**, and **Automatic Backups**. Scheduling is optional; choosing a destination completes the required setup.
 
@@ -68,7 +68,7 @@ Everything else — your username, actual home directory, currently installed Fl
 
 ### Backup destination
 
-Keep is a Borg front-end, not something that should only think in terms of "the NAS" — `destination` supports three types, and the same `destination.py` resolution logic (shared between Keep and the backup script, so both agree on what "available" means) checks whichever one you've configured. **Whichever type, if it's not available, the backup aborts rather than silently falling back to writing somewhere else** — check the log / Keep's status panel for why.
+Keep is a Borg front-end, not something that should only think in terms of "the NAS" — `destination` supports three types, and the same `core/destination.py` resolution logic (shared between Keep and the backup script, so both agree on what "available" means) checks whichever one you've configured. **Whichever type, if it's not available, the backup aborts rather than silently falling back to writing somewhere else** — check the log / Keep's status panel for why.
 
 **Network storage** (NAS, mapped network drive) — tracked by its mount path, since it's expected to always be there:
 ```json
@@ -136,7 +136,7 @@ It'll show up as a tile whenever that path exists in the archive being browsed. 
 ./launch.sh
 ```
 
-`launch.sh` first reuses any working Python/PySide6 interpreter already configured. On a fresh source/preview install where PySide6 is unavailable, it creates a private `.venv` beside Keep and installs the GUI dependency from `requirements.txt`. This keeps the system Python untouched. A packaged consumer release should bundle the runtime so end users do not need this bootstrap step.
+`launch.sh` first reuses any working Python/PySide6 interpreter already configured. On a fresh source/preview install where PySide6 is unavailable, it creates a private `.venv` beside Keep and installs Keep's dependencies from `pyproject.toml` (`pip install --editable .`). This keeps the system Python untouched. A packaged consumer release should bundle the runtime so end users do not need this bootstrap step.
 
 ### Backup logs
 
@@ -166,9 +166,9 @@ Neither dialog ever shows a passphrase or reconstructed key back to you once it'
 
 ## Shared desktop theme
 
-Keep uses `style.qss` for shared surfaces, tabs, fields, buttons and item views, `themes.py` for light/dark color tokens, and `theming.py` for loading and live Qt palette updates. The system accent is read from Qt; primary-action text chooses black or white for contrast. Widget roles (`primary`, `secondary`, `error`) replace local color overrides. Keep geometry shared across palettes and add reusable rules here when introducing controls.
+Keep uses `ui/assets/style.qss` for shared surfaces, tabs, fields, buttons and item views, `ui/themes.py` for light/dark color tokens, and `ui/theming.py` for loading and live Qt palette updates. The system accent is read from Qt; primary-action text chooses black or white for contrast. Widget roles (`primary`, `secondary`, `error`) replace local color overrides. Keep geometry shared across palettes and add reusable rules here when introducing controls.
 
-Portable verification: `python -m unittest -q tests.test_applications tests.test_release_safety tests.test_theming tests.test_mount_service` and `python -m tests.test_gui_smoke` (from the repository root; `packaging/test-linux.sh` runs everything). Screenshots use synthetic data and do not verify real Borg operations.
+Portable verification: `python -m unittest -q tests.test_applications tests.test_release_safety tests.test_theming tests.test_mount_service` and `python -m tests.test_gui_smoke` (from the repository root; `scripts/test-linux.sh` runs everything). Screenshots use synthetic data and do not verify real Borg operations.
 
 ## Maintenance and release checks
 
@@ -180,15 +180,15 @@ Every launch writes a private session log under `$XDG_STATE_HOME/keep/logs` (nor
 
 ## Command-line interface (0.9.2)
 
-See [CLI.md](CLI.md). From the complete updated source checkout:
+See [CLI.md](CLI.md). From the checkout root (the root `keep_backup.py` points Python at `src/`):
 
 ```sh
-python3 cli.py status
-python3 cli.py archives --json
-python3 cli.py doctor
-python3 cli.py logs
-python3 cli.py check
-python3 cli.py check --deep
+python3 -m keep_backup.cli status
+python3 -m keep_backup.cli archives --json
+python3 -m keep_backup.cli doctor
+python3 -m keep_backup.cli logs
+python3 -m keep_backup.cli check
+python3 -m keep_backup.cli check --deep
 ```
 
-These commands do not require PySide6. The Debian package adds `keep-cli` while retaining `keep` for the GUI. Update the full source checkout when testing this release: the GUI and engine now also depend on `borg_ops.py` and `operation_lock.py`. Preserve local configuration and Linux `.venv` when transferring source files.
+These commands do not require PySide6. The Debian package adds `keep-cli` while retaining `keep` for the GUI. Update the full source checkout when testing this release: the GUI and engine now also depend on `core/borg_ops.py` and `core/operation_lock.py`. Preserve local configuration and Linux `.venv` when transferring source files.

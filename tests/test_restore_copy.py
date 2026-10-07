@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 with tempfile.TemporaryDirectory() as config_dir:
     with patch.dict(os.environ, {"KEEP_CONFIG_PATH": str(Path(config_dir) / "config.json")}):
-        import main
+        from keep_backup.ui import main_window
 
 
 @unittest.skipUnless(os.name == "posix", "Requires Linux symlinks and Unix sockets")
@@ -40,10 +40,10 @@ class RestoreCopyTests(unittest.TestCase):
                         if mode == "direct":
                             dest.mkdir()
                             (dest / "obsolete").write_text("old", encoding="utf-8")
-                            main.ItemPicker._replace_live_path(None, str(source.parent.parent), str(dest))
+                            main_window.ItemPicker._replace_live_path(None, str(source.parent.parent), str(dest))
                             self.assertFalse((dest / "obsolete").exists())
                         else:
-                            main.copy_item(str(source.parent.parent), str(dest))
+                            main_window.copy_item(str(source.parent.parent), str(dest))
                         restored = dest / "config" / "discord"
                         self.assertEqual((restored / "settings.json").read_bytes(), (source / "settings.json").read_bytes())
                         for name, target in targets.items():
@@ -59,7 +59,7 @@ class RestoreCopyTests(unittest.TestCase):
             with socket.socket(socket.AF_UNIX) as runtime_socket:
                 runtime_socket.bind(str(source / "actual-socket"))
                 with self.assertRaises(shutil.Error):
-                    main.copy_item(str(source), str(root / "restored"))
+                    main_window.copy_item(str(source), str(root / "restored"))
 
 
 if __name__ == "__main__":

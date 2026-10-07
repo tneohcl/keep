@@ -6,7 +6,7 @@
 export XDG_CONFIG_HOME="$HOME/.config" XDG_STATE_HOME="$HOME/.local/state"
 export XDG_CACHE_HOME="$HOME/.cache" XDG_DATA_HOME="$HOME/.local/share"
 case "$(basename "$0")" in
-    keep-backup) exec python3 /app/share/keep/keep_backup.py "$@" ;;
-    keep-cli) exec python3 /app/share/keep/cli.py "$@" ;;
-    *) exec python3 /app/share/keep/main.py "$@" ;;
+    keep-backup) exec python3 -m keep_backup.engine "$@" ;;
+    keep-cli) exec python3 -m keep_backup.cli "$@" ;;
+    *) exec python3 -m keep_backup "$@" ;;
 esac

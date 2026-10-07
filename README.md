@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="packaging/flatpak/io.github.tneohcl.Keep.svg" width="96" height="96" alt="">
+<img src="data/io.github.tneohcl.Keep.svg" width="96" height="96" alt="">
 
 # Keep Backup
 
@@ -94,7 +94,8 @@ packaging/build-deb.sh            # writes dist/keep-backup_<version>_all.deb
 sudo apt install ./dist/keep-backup_*_all.deb
 ```
 
-Installs `keep` (the app) and `keep-cli`, using the distribution's Python, PySide6 and Borg.
+Installs `keep` (the app), `keep-cli` and `keep-backup` (the engine the timer runs), using the
+distribution's Python, PySide6 and Borg.
 
 ### From source
 
@@ -148,15 +149,15 @@ keep-cli doctor          # check the destination, Borg and the timer setup
 ## Development
 
 ```sh
-packaging/test-linux.sh                  # unit, GUI smoke and recovery tests
-packaging/acceptance.sh <python>         # failure scenarios: drive missing, removed or full, crashes
-packaging/screenshots.sh <python>        # regenerate docs/screenshots from a demo user
+scripts/test-linux.sh                  # unit, GUI smoke and recovery tests
+scripts/acceptance.sh <python>         # failure scenarios: drive missing, removed or full, crashes
+scripts/screenshots.sh <python>        # regenerate docs/screenshots from a demo user
 ```
 
 The acceptance and screenshot scripts run in an unprivileged user and mount namespace with a
 throwaway home folder, so your own backups and settings are never touched. The interface is
-built with [odcs-ui](https://github.com/tneohcl/odcs-ui), bundled in `vendor/`
-(update it with `packaging/sync-odcs-ui.sh <tag>`). Changes go through pull requests with a
+built with [odcs-ui](https://github.com/tneohcl/odcs-ui), bundled in `src/keep_backup/ui/_vendor/`
+(update it with `scripts/sync-odcs-ui.sh <tag>`). Changes go through pull requests with a
 required review and CI.
 
 ## License

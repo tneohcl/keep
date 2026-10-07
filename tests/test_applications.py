@@ -1,8 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
-import applications
-import consumer
+from keep_backup.core import applications
+from keep_backup.core import consumer
 
 
 class AppSelectionTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class AppSelectionTests(unittest.TestCase):
 
     def test_residual_data_does_not_prove_installation(self):
         from unittest.mock import patch
-        with patch("applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", return_value=None):
+        with patch("keep_backup.core.applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", return_value=None):
             installed = applications.InstalledApps(self.home)
         self.assertFalse(installed.contains("Firefox"))
         self.assertFalse(installed.contains("Krita"))
@@ -30,7 +30,7 @@ class AppSelectionTests(unittest.TestCase):
         from unittest.mock import patch
         appid = "org.example.Leftover"
         (self.home / ".var/app" / appid).mkdir()
-        with patch("applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", return_value=None):
+        with patch("keep_backup.core.applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", return_value=None):
             self.assertFalse(applications.InstalledApps(self.home).contains(appid))
             (self.home / ".local/share/flatpak/app" / appid / "current/active").mkdir(parents=True)
             self.assertTrue(applications.InstalledApps(self.home).contains(appid))
@@ -40,9 +40,9 @@ class AppSelectionTests(unittest.TestCase):
         desktop = self.home / ".local/share/applications"
         desktop.mkdir(parents=True)
         (desktop / "notes.desktop").write_text("[Desktop Entry]\nType=Application\nName=Notes\nExec=notes-app %U\n")
-        with patch("applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", side_effect=lambda name: "/bin/notes-app" if name == "notes-app" else None):
+        with patch("keep_backup.core.applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", side_effect=lambda name: "/bin/notes-app" if name == "notes-app" else None):
             self.assertTrue(applications.InstalledApps(self.home).contains("Notes"))
-        with patch("applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", return_value=None):
+        with patch("keep_backup.core.applications.os.environ", {"XDG_DATA_DIRS": str(self.home / "empty")}), patch("shutil.which", return_value=None):
             self.assertFalse(applications.InstalledApps(self.home).contains("Notes"))
 
     def test_groups_native_and_flatpak_without_borg_state(self):

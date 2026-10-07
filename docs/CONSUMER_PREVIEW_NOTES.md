@@ -6,7 +6,7 @@ For a true fresh-install test, extract this ZIP into a **new directory**. If you
 
 ## Authoritative backup log
 
-Keep's built-in `keep_backup.py` now opens the per-run log before reading configuration and records:
+Keep's built-in engine (`keep_backup/engine.py`) now opens the per-run log before reading configuration and records:
 
 - built-in engine, host, Python and Borg version;
 - config path;
@@ -55,7 +55,7 @@ The build environment does not provide PySide6, so the existing full Qt GUI regr
 
 ## First-run Python GUI dependency
 
-This source/preview package does not bundle Qt itself. `./launch.sh` now checks for a working PySide6 interpreter and, if none is available, creates a private `.venv` inside the Keep folder and installs `PySide6` from `requirements.txt`. On Debian/Ubuntu, `python3-venv` must be available. This is a preview convenience; a normal consumer package should bundle its runtime.
+This source/preview package does not bundle Qt itself. `./launch.sh` now checks for a working PySide6 interpreter and, if none is available, creates a private `.venv` inside the Keep folder and installs its dependencies from `pyproject.toml`. On Debian/Ubuntu, `python3-venv` must be available. This is a preview convenience; a normal consumer package should bundle its runtime.
 
 ## 2026-09-15 real-backup follow-up
 
