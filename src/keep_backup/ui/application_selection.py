@@ -5,7 +5,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QStyle
 from .common import DisclosureSection
 from .checkable_list import CheckableListWidget, apply_tile_mode
-from .restore_picker import view_switch
+from .restore_picker import SameHeightRow, view_switch
 from keep_backup.core import host
 
 def _theme_or_file_icon(name):
@@ -61,6 +61,7 @@ class ApplicationSelectionDialog(QDialog):
         view_row.addWidget(self.select_all_button)
         view_row.addWidget(self.clear_selection_button)
         layout.addLayout(view_row)
+        self._row_heights = SameHeightRow(search, self.view_mode, self.select_all_button, self.clear_selection_button)
         def set_mode(index):
             apply_tile_mode(self.items, index == 0, self.fontMetrics())
         self.view_mode.currentChanged.connect(set_mode)
