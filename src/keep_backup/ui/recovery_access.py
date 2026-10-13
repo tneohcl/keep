@@ -8,9 +8,11 @@ import os
 from pathlib import Path
 import subprocess
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QRect, QSize, Qt, QThread, Signal
+from PySide6.QtGui import QPalette, QPainter
 from PySide6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget, QScrollArea)
+                               QLabel, QMessageBox, QPushButton, QSizePolicy, QStyle, QStyleOptionButton,
+                               QVBoxLayout, QWidget, QScrollArea)
 
 from keep_backup.ui import theming
 from keep_backup.ui._vendor.odcs_ui.theming import set_role
@@ -80,6 +82,67 @@ class KeyExportWorker(QThread):
             self.finished_result.emit(result.returncode == 0, lines[-1] if result.returncode and lines else "")
         except Exception as exc:  # always answer, or the button stays busy
             self.finished_result.emit(False, str(exc))
+
+
+class WrappingCheckBox(QCheckBox):
+    """A check box whose text wraps like a word-wrapped label. QCheckBox
+    keeps its text on one line: at 22 pt "A printed recovery kit is stored
+    away from this computer" needed 745 px and the dialog scrolled
+    sideways. The whole row toggles it, so a wrapped line is a target too;
+    text() is unchanged."""
+
+    FLAGS = Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap
+
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)  # grows with its wrapped height
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def _geometry(self):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        indicator = self.style().subElementRect(QStyle.SE_CheckBoxIndicator, option, self)
+        left = indicator.width() + self.style().pixelMetric(QStyle.PM_CheckBoxLabelSpacing, option, self)
+        return option, indicator, left
+
+    def _text_height(self, width):
+        _option, _indicator, left = self._geometry()
+        return self.fontMetrics().boundingRect(QRect(0, 0, max(1, width - left), 100000), self.FLAGS,
+                                               self.text()).height()
+
+    def hasHeightForWidth(self):  # noqa: N802 (Qt API)
+        return True
+
+    def heightForWidth(self, width):  # noqa: N802
+        _option, indicator, _left = self._geometry()
+        return max(indicator.height(), self._text_height(width))
+
+    def sizeHint(self):  # noqa: N802 — the text on one line
+        _option, indicator, left = self._geometry()
+        metrics = self.fontMetrics()
+        return QSize(left + metrics.horizontalAdvance(self.text()) + 1, max(indicator.height(), metrics.height()))
+
+    def minimumSizeHint(self):  # noqa: N802 — wraps down to its longest word
+        _option, indicator, left = self._geometry()
+        metrics = self.fontMetrics()
+        widest = max((metrics.horizontalAdvance(word) for word in self.text().split()), default=0)
+        return QSize(left + widest + 1, max(indicator.height(), metrics.height()))
+
+    def hitButton(self, pos):  # noqa: N802
+        return self.rect().contains(pos)
+
+    def paintEvent(self, event):  # noqa: N802
+        option, indicator, left = self._geometry()
+        painter = QPainter(self)
+        # The box, level with the first line of text.
+        option.text = ""
+        option.rect = QRect(0, 0, self.width(), max(indicator.height(), self.fontMetrics().height()))
+        self.style().drawControl(QStyle.CE_CheckBox, option, painter, self)
+        role = QPalette.WindowText
+        group = QPalette.Active if self.isEnabled() else QPalette.Disabled
+        painter.setPen(self.palette().color(group, role))
+        painter.drawText(QRect(left, 0, self.width() - left, self.height()), self.FLAGS, self.text())
 
 
 class RecoveryAccessDialog(QDialog):
@@ -158,7 +221,7 @@ class RecoveryAccessDialog(QDialog):
         entry = recovery_test.load_access(repository, repository_id=self.repository_id)
         for key in recovery_test.CONFIRMATIONS:
             state, when = recovery_test.confirmation(entry, key)
-            box = QCheckBox(texts[key])
+            box = WrappingCheckBox(texts[key])
             box.setChecked(state == "confirmed")
             note = QLabel(f"Confirmed {self._friendly(when)}" if state == "confirmed"
                           else f"Last confirmed {self._friendly(when)}. Check again." if state == "stale" and when
