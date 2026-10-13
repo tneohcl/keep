@@ -433,14 +433,16 @@ class StatusFacts(QFrame):
             lay = QVBoxLayout(cell)
             lay.setContentsMargins(0, 8, 10, 8)
             lay.setSpacing(6)
-            # Top-aligned, so a two-line fact keeps its icon, title and date
-            # level with the first line.
-            lay.setAlignment(Qt.AlignTop)
             lay.addWidget(widget)
             if widget is desc_label and button is not None:
                 # The fact's action sits under its description, on the same
                 # left edge, rather than in a column of its own.
                 lay.addWidget(button, 0, Qt.AlignLeft)
+            # Top-aligned, so a two-line fact keeps its icon, title and date
+            # level with the first line: a stretch, not setAlignment, which
+            # sized the row from the description's size hint and clipped a
+            # third line at large text (alignment breaks word-wrap height).
+            lay.addStretch(1)
             self._grid.addWidget(cell, row, col)
             cells.append(cell)
         # Separators run between facts, not under the last one.
