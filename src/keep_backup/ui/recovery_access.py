@@ -8,9 +8,11 @@ import os
 from pathlib import Path
 import subprocess
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QRect, QSize, Qt, QThread, Signal
+from PySide6.QtGui import QPalette, QPainter
 from PySide6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget, QScrollArea)
+                               QLabel, QMessageBox, QPushButton, QSizePolicy, QStyle, QStyleOptionButton,
+                               QVBoxLayout, QWidget, QScrollArea)
 
 from keep_backup.ui import theming
 from keep_backup.ui._vendor.odcs_ui.theming import set_role
@@ -82,6 +84,67 @@ class KeyExportWorker(QThread):
             self.finished_result.emit(False, str(exc))
 
 
+class WrappingCheckBox(QCheckBox):
+    """A check box whose text wraps like a word-wrapped label. QCheckBox
+    keeps its text on one line: at 22 pt "A printed recovery kit is stored
+    away from this computer" needed 745 px and the dialog scrolled
+    sideways. The whole row toggles it, so a wrapped line is a target too;
+    text() is unchanged."""
+
+    FLAGS = Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap
+
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)  # grows with its wrapped height
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def _geometry(self):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        indicator = self.style().subElementRect(QStyle.SE_CheckBoxIndicator, option, self)
+        left = indicator.width() + self.style().pixelMetric(QStyle.PM_CheckBoxLabelSpacing, option, self)
+        return option, indicator, left
+
+    def _text_height(self, width):
+        _option, _indicator, left = self._geometry()
+        return self.fontMetrics().boundingRect(QRect(0, 0, max(1, width - left), 100000), self.FLAGS,
+                                               self.text()).height()
+
+    def hasHeightForWidth(self):  # noqa: N802 (Qt API)
+        return True
+
+    def heightForWidth(self, width):  # noqa: N802
+        _option, indicator, _left = self._geometry()
+        return max(indicator.height(), self._text_height(width))
+
+    def sizeHint(self):  # noqa: N802 — the text on one line
+        _option, indicator, left = self._geometry()
+        metrics = self.fontMetrics()
+        return QSize(left + metrics.horizontalAdvance(self.text()) + 1, max(indicator.height(), metrics.height()))
+
+    def minimumSizeHint(self):  # noqa: N802 — wraps down to its longest word
+        _option, indicator, left = self._geometry()
+        metrics = self.fontMetrics()
+        widest = max((metrics.horizontalAdvance(word) for word in self.text().split()), default=0)
+        return QSize(left + widest + 1, max(indicator.height(), metrics.height()))
+
+    def hitButton(self, pos):  # noqa: N802
+        return self.rect().contains(pos)
+
+    def paintEvent(self, event):  # noqa: N802
+        option, indicator, left = self._geometry()
+        painter = QPainter(self)
+        # The box, level with the first line of text.
+        option.text = ""
+        option.rect = QRect(0, 0, self.width(), max(indicator.height(), self.fontMetrics().height()))
+        self.style().drawControl(QStyle.CE_CheckBox, option, painter, self)
+        role = QPalette.WindowText
+        group = QPalette.Active if self.isEnabled() else QPalette.Disabled
+        painter.setPen(self.palette().color(group, role))
+        painter.drawText(QRect(left, 0, self.width() - left, self.height()), self.FLAGS, self.text())
+
+
 class RecoveryAccessDialog(QDialog):
     changed = Signal()
 
@@ -98,7 +161,7 @@ class RecoveryAccessDialog(QDialog):
         self.setWindowTitle("Recovery access")
         self.resize(min(600, int(self.screen().availableGeometry().width() * .9)), 650)
         outer = QVBoxLayout(self)
-        scroll = QScrollArea()
+        scroll = self._scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
         scroll.setWidget(content)
@@ -158,7 +221,7 @@ class RecoveryAccessDialog(QDialog):
         entry = recovery_test.load_access(repository, repository_id=self.repository_id)
         for key in recovery_test.CONFIRMATIONS:
             state, when = recovery_test.confirmation(entry, key)
-            box = QCheckBox(texts[key])
+            box = WrappingCheckBox(texts[key])
             box.setChecked(state == "confirmed")
             note = QLabel(f"Confirmed {self._friendly(when)}" if state == "confirmed"
                           else f"Last confirmed {self._friendly(when)}. Check again." if state == "stale" and when
@@ -222,13 +285,44 @@ class RecoveryAccessDialog(QDialog):
         buttons.addWidget(close)
         buttons.addWidget(self.test_button)
         layout.addLayout(buttons)
+        self._buttons = buttons
+        # style.qss's min-width: 80px is a hard minimum, so at large text the
+        # row squeezed its labels ("Export key fil") instead of widening.
+        # Styled first (in place), or the stylesheet's 80 px replaces this.
+        for button in (self.export_button, close, self.test_button):
+            button.ensurePolished()
+            button.setMinimumWidth(button.sizeHint().width())
         self._fit()
 
     # ---- layout helpers ------------------------------------------------
     def _fit(self):
         # Word-wrapped labels in a top-level dialog: size from the real width.
+        # Wide enough for what can't wrap (the button row at large text, which
+        # otherwise scrolled sideways), within the screen; 600 px when that fits.
         self.layout().activate()
-        self.resize(self.width(), min(720, int(self.screen().availableGeometry().height() * .85)))
+        available = self.screen().availableGeometry()
+        limit = int(available.width() * .9)
+        if self._needed_width() > limit and self.export_button.parentWidget() is not None \
+                and self._buttons.indexOf(self.export_button) >= 0:
+            # Still too wide for the screen: Export key file… gets its own line
+            # above Close and Test recovery….
+            self._buttons.removeWidget(self.export_button)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 12, 0, 0)
+            row.addWidget(self.export_button)
+            row.addStretch(1)
+            content = self._scroll.widget().layout()
+            content.insertLayout(content.indexOf(self._buttons), row)
+            content.activate()
+        width = min(max(self.width(), self._needed_width()), limit)
+        self.resize(width, min(720, int(available.height() * .85)))
+
+    def _needed_width(self):
+        """The dialog width at which nothing has to scroll sideways."""
+        scroll = self._scroll
+        margins = self.layout().contentsMargins()
+        return (scroll.widget().minimumSizeHint().width() + scroll.verticalScrollBar().sizeHint().width()
+                + 2 * scroll.frameWidth() + margins.left() + margins.right())
 
     @staticmethod
     def _friendly(iso):
@@ -244,6 +338,7 @@ class RecoveryAccessDialog(QDialog):
         label = QLabel(text)
         label.setObjectName("odcsGroupHeading")
         label.setStyleSheet("padding: 0;")
+        label.setWordWrap(True)  # "Verified by Keep · Today at 9:00 AM" at large text
         return label
 
     @staticmethod
