@@ -7,14 +7,19 @@ Stylesheets load in order: odcs-ui base.qss, then Keep's style.qss on top.
 """
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QEvent
+import weakref
+
+from PySide6.QtCore import QObject, QEvent, QTimer
 from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QLineEdit, QPushButton
 
 from keep_backup.ui._vendor.odcs_ui import color as odcs_color
 from keep_backup.ui._vendor.odcs_ui import theming as odcs_theming
 
 ASSETS = Path(__file__).with_name("assets")
 KEEP_QSS = ASSETS / "style.qss"
+
+QWIDGETSIZE_MAX = (1 << 24) - 1  # Qt's "no maximum"; PySide6 doesn't export it
 
 # Same choices and labels in every ODCS app (odcs_ui.theming.THEME_CHOICES).
 THEME_CHOICES = odcs_theming.THEME_CHOICES
@@ -85,7 +90,47 @@ class ThemeController(QObject):
         return False
 
 
+class ControlHeights(QObject):
+    """Buttons and fields never shorter than their own text needs.
+
+    style.qss's min-height is in px and Qt treats it as a hard minimum, so a
+    window short on room squeezed buttons to 36 px around 22 pt text that
+    needs 49. After the stylesheet styles a control, and when its font
+    changes, its minimum height becomes its size hint: the same 36 px (40
+    for fields) at normal sizes, more with larger text. Controls with a
+    height set on purpose (SameHeightRow) or one that follows their wrapped
+    text (settings rows) are left alone."""
+
+    KINDS = (QPushButton, QLineEdit, QComboBox, QAbstractSpinBox)
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._pending = weakref.WeakSet()
+        app.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Polish, QEvent.FontChange, QEvent.StyleChange) and isinstance(obj, self.KINDS):
+            if not self._pending:
+                QTimer.singleShot(0, self._fit)  # after the control has taken the change in
+            self._pending.add(obj)
+        return False
+
+    def _fit(self):
+        controls, self._pending = list(self._pending), weakref.WeakSet()
+        for control in controls:
+            try:
+                if control.maximumHeight() < QWIDGETSIZE_MAX or control.hasHeightForWidth():
+                    continue
+                height = control.sizeHint().height()
+                if control.minimumHeight() != height:
+                    control.setMinimumHeight(height)
+            except RuntimeError:  # deleted since
+                continue
+
+
 def install(app, choice=None):
+    if not hasattr(app, "_keep_control_heights"):
+        app._keep_control_heights = ControlHeights(app)
     if not hasattr(app, "_keep_theme"):
         app._keep_theme = ThemeController(app)
         # Keyboard-only focus ring: style.qss matches [focusVisible="true"].

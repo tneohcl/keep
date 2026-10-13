@@ -145,6 +145,12 @@ class ApplicationSelectionDialog(QDialog):
         super().showEvent(event)
         self._fit_height()
 
+    def event(self, event):
+        handled = super().event(event)
+        if event.type() == QEvent.LayoutRequest and hasattr(self, "items"):
+            self._fit_height()  # a control grew after the dialog was shown (theming.ControlHeights)
+        return handled
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._fit_height()
