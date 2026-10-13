@@ -1,4 +1,4 @@
-from PySide6.QtCore import QEvent, Qt, QSize
+from PySide6.QtCore import QEvent, QObject, Qt, QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QListWidget, QListWidgetItem, QStyle, QScrollArea, QFrame, QMenu, QAbstractItemView
 
@@ -54,6 +54,38 @@ class _CatalogScroll(QScrollArea):
         return QSize(hint.width(), max(self._rows_height, self.minimumHeight()))
 
 
+class SameHeightRow(QObject):
+    """One height for a row of mixed controls: a search field, a Grid | List
+    switch and buttons were 40, 28 and 36 px (Keep's fields and buttons
+    are padded differently from odcs-ui's 28 px switch). Each takes the
+    tallest one's natural height, refitted when the text size or style
+    changes; the switch's segments fill it with its usual even inset."""
+
+    def __init__(self, field, switch, *buttons):
+        super().__init__(field)
+        self._field, self._switch, self._buttons = field, switch, buttons
+        for widget in (field, switch, *buttons, *switch.buttons()):
+            widget.installEventFilter(self)
+        self.fit()
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Polish, QEvent.FontChange, QEvent.StyleChange):
+            self.fit()
+        return False
+
+    def fit(self):
+        margins = self._switch.layout().contentsMargins()
+        inset = margins.top() + margins.bottom()
+        segments = self._switch.buttons()
+        natural = [widget.sizeHint().height() for widget in (self._field, *self._buttons)]
+        natural.append(max((segment.sizeHint().height() for segment in segments), default=0) + inset)
+        height = max(natural)
+        for widget in (self._field, self._switch, *self._buttons):
+            widget.setFixedHeight(height)
+        for segment in segments:
+            segment.setFixedHeight(height - inset)
+
+
 def view_switch(accessible_name):
     """Grid / List segmented switch (odcs ViewSwitch) with theme icons."""
     switch = ViewSwitch(["Grid", "List"], accessible_name=accessible_name)
@@ -101,6 +133,8 @@ class RestorePicker(QWidget):
         self.select_all_button.setEnabled(False)
         self.clear_selection_button.setEnabled(False)
         layout.addLayout(view_row)
+        self._row_heights = SameHeightRow(self.search, self.view_mode, self.select_all_button,
+                                          self.clear_selection_button)
         self.show_uninstalled = QCheckBox("Show data for uninstalled apps")
         self.show_uninstalled.hide()
         self.show_uninstalled.toggled.connect(self._render_catalog)
