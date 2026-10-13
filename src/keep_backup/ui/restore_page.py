@@ -1,5 +1,5 @@
-from PySide6.QtCore import Qt, QDir
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QProgressBar, QMenu, QTabWidget, QFileSystemModel, QTreeView, QAbstractItemView
+from PySide6.QtCore import Qt, QDir, QEvent, QSize, QTimer
+from PySide6.QtWidgets import QFrame, QScrollArea, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QProgressBar, QMenu, QTabWidget, QFileSystemModel, QTreeView, QAbstractItemView
 from keep_backup.core import consumer
 
 class RestorePage(QWidget):
@@ -107,3 +107,56 @@ class RestorePage(QWidget):
         self.tabs.addTab(adv_tab, "Advanced (browse all files)")
         self.tabs.currentChanged.connect(controller.on_tab_changed)
 
+
+class RestoreScroll(QScrollArea):
+    """Holds the Restore page and scrolls it up and down when its wrapped
+    text needs more height than the window has (large text), instead of
+    squeezing the catalog to a sliver and that text into More options….
+    The window keeps the page's own minimum size, as before; only the
+    height wrapping adds on top of it scrolls."""
+
+    def __init__(self, page):
+        super().__init__()
+        self.setObjectName("restoreScroll")
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setWidget(page)
+
+    def event(self, event):
+        if event.type() == QEvent.Polish:
+            # The page measures itself while still hidden and unstyled, and
+            # in a scroll area keeps that until first shown: the window
+            # could start smaller than the page's real minimum. Measure it
+            # again once the stylesheet has reached it.
+            QTimer.singleShot(0, self._remeasure)
+        return super().event(event)
+
+    def _remeasure(self):
+        page = self.widget()
+        widgets = [page, *page.findChildren(QWidget)]
+        for widget in reversed(widgets):  # the cached sizes layouts keep of each widget
+            widget.updateGeometry()
+        for widget in widgets:
+            if widget.layout() is not None:
+                _invalidate(widget.layout())
+        self.updateGeometry()
+        # As a hidden page of the window's stack, this doesn't reach the
+        # stack's layout on its own.
+        stack = self.parentWidget()
+        if stack is not None and stack.layout() is not None:
+            stack.layout().invalidate()
+            stack.updateGeometry()
+
+    def minimumSizeHint(self):
+        page = self.widget().minimumSizeHint()
+        return QSize(page.width() + self.verticalScrollBar().sizeHint().width(), page.height())
+
+
+def _invalidate(layout):
+    """invalidate() reaches neither nested layouts nor their cached sizes."""
+    for index in range(layout.count()):
+        child = layout.itemAt(index).layout()
+        if child is not None:
+            _invalidate(child)
+    layout.invalidate()
