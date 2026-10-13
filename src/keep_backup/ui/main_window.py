@@ -11,7 +11,7 @@ from keep_backup.core.mount_service import MountCoordinator
 from keep_backup.ui.restore_picker import RestorePicker
 from keep_backup.ui.backup_panel import BackupPanel
 from keep_backup.ui.status_page import StatusPage
-from keep_backup.ui.restore_page import RestorePage
+from keep_backup.ui.restore_page import RestorePage, RestoreScroll
 from keep_backup.ui.common import DisclosureSection
 from keep_backup.ui.restore_results import show_restore_results
 from keep_backup.ui.application_selection import ApplicationSelectionDialog
@@ -2870,7 +2870,10 @@ class MainWindow(QWidget):
         self.pages = QStackedWidget()
         self.pages.setObjectName("keepContent")
         self.pages.addWidget(self.status_page)
-        self.pages.addWidget(self.restore_page)
+        # Scrolls as a whole when the window is too short for it (large
+        # text), like the Status page, instead of squeezing the catalog to
+        # a sliver and the wrapped text under it into More options….
+        self.pages.addWidget(RestoreScroll(self.restore_page))
         # At the top of the sidebar, as wide as the cards under it: it switches
         # the sidebar and the page together.
         self.view_switch = ViewSwitch(["Status", "Restore"], accessible_name="Keep view", fill=True)

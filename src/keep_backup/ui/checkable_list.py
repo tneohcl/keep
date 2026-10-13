@@ -131,7 +131,27 @@ class CheckTileDelegate(QStyledItemDelegate):
         return super().editorEvent(event, model, option, index)  # Space / Select toggle
 
 
-def apply_tile_mode(view, grid, font_metrics):
+MAX_TILE_WIDTH = 520
+
+
+def _fitted_grid(view, base, icon, metrics):
+    """base, grown so every name's longest word fits on a line and the
+    wrapped name and subtitle fit the tile's height. Large text otherwise
+    cut names off ("Manipulatior" at 14 pt); normal sizes keep base."""
+    # A cell is the grid less 4 px (update_cell_sizes), a tile the cell less
+    # 4 px (CheckTileDelegate.layout); the text sits inset in the tile.
+    chrome = 8 + 2 * CheckTileDelegate.PAD + CheckTileDelegate.CHECK + 2 * CheckTileDelegate.GAP + icon
+    texts = [CheckTileDelegate._texts(view.model().index(row, 0)) for row in range(view.count())]
+    widest = max((metrics.horizontalAdvance(word) for label, _ in texts for word in label.split()), default=0)
+    width = min(MAX_TILE_WIDTH, max(base.width(), widest + chrome + 1))
+    text_width = width - chrome
+    flags = Qt.AlignLeft | Qt.TextWordWrap
+    tallest = max((sum(metrics.boundingRect(QRect(0, 0, text_width, 10000), flags, t).height() + 2
+                       for t in (label, subtitle) if t) for label, subtitle in texts), default=0)
+    return QSize(width, max(base.height(), tallest + 16))
+
+
+def apply_tile_mode(view, grid, font_metrics=None):
     """Grid: framed tiles in wrapping columns. List: compact rows."""
     view.setViewMode(QListWidget.ListMode)
     view.setFlow(QListWidget.LeftToRight)
@@ -139,16 +159,22 @@ def apply_tile_mode(view, grid, font_metrics):
     view.setResizeMode(QListWidget.Adjust)
     view.setUniformItemSizes(True)
     view.setMouseTracking(True)
-    line = font_metrics.height()
-    if grid:
-        view.setIconSize(QSize(32, 32))
-        view.setGridSize(QSize(210, max(64, line * 3 + 16)))  # room for a 2-line name + subtitle
-        view.setItemDelegate(CheckTileDelegate(view, 32, framed=True))
-    else:
-        view.setIconSize(QSize(20, 20))
-        view.setGridSize(QSize(280, max(36, line * 2 + 10)))
-        view.setItemDelegate(CheckTileDelegate(view, 20, framed=False))
+    icon = 32 if grid else 20
+    view.setIconSize(QSize(icon, icon))
+    view.setItemDelegate(CheckTileDelegate(view, icon, framed=grid))
     view.setSpacing(0)
+    view._tile_grid = grid
+    fit_tiles(view)
+
+
+def fit_tiles(view):
+    """Size the tiles for the list's own font, the one they are drawn in;
+    CheckableListWidget calls this again when that font changes."""
+    metrics = view.fontMetrics()
+    line = metrics.height()
+    grid = view._tile_grid
+    base = QSize(210, max(64, line * 3 + 16)) if grid else QSize(280, max(36, line * 2 + 10))  # 2-line name + subtitle
+    view.setGridSize(_fitted_grid(view, base, view.iconSize().width(), metrics))
     view.update_cell_sizes()
 
 
@@ -160,6 +186,11 @@ class CheckableListWidget(QListWidget):
         self.setTextElideMode(Qt.ElideNone)
         self.setMouseTracking(True)
         self._pressed_item = None
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.FontChange and hasattr(self, "_tile_grid"):
+            fit_tiles(self)
 
     def update_cell_sizes(self):
         # Give the delegate the whole cell for word wrapping; uniform item

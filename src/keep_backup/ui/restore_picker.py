@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QEvent, Qt, QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QCheckBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QListWidget, QListWidgetItem, QStyle, QScrollArea, QFrame, QMenu, QAbstractItemView
 
@@ -20,6 +20,11 @@ class SectionListWidget(CheckableListWidget):
         super().resizeEvent(event)
         self.fit_height()
 
+    def changeEvent(self, event):
+        super().changeEvent(event)  # refits the tiles on a font change
+        if event.type() == QEvent.FontChange:
+            self.fit_height()
+
     def fit_height(self):
         grid = self.gridSize()
         visible = sum(not self.item(i).isHidden() for i in range(self.count()))
@@ -28,6 +33,26 @@ class SectionListWidget(CheckableListWidget):
             return
         columns = max(1, self.viewport().width() // grid.width())
         self.setFixedHeight(((visible + columns - 1) // columns) * grid.height() + 4)
+
+class _CatalogScroll(QScrollArea):
+    """The tiles' scroll area. Asks for about two rows of tiles and no more
+    (set_rows_height), then takes whatever height the page has spare: large
+    text squeezed it to a sliver, while asking for all its content would
+    make the whole Restore page scroll at normal sizes too."""
+
+    def __init__(self):
+        super().__init__()
+        self._rows_height = 0
+
+    def set_rows_height(self, height):
+        self._rows_height = height
+        self.setMinimumHeight(height)
+        self.updateGeometry()
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        return QSize(hint.width(), max(self._rows_height, self.minimumHeight()))
+
 
 def view_switch(accessible_name):
     """Grid / List segmented switch (odcs ViewSwitch) with theme icons."""
@@ -101,7 +126,7 @@ class RestorePicker(QWidget):
         self._sections_layout = QVBoxLayout(self._sections_container)
         self._sections_layout.setContentsMargins(0, 0, 0, 0)
         self._sections_layout.setSpacing(4)
-        self._scroll = QScrollArea()
+        self._scroll = _CatalogScroll()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setWidget(self._sections_container)
@@ -172,9 +197,18 @@ class RestorePicker(QWidget):
         for section in self._sections.values():
             apply_tile_mode(section, self._icon_mode, self.fontMetrics())
             section.fit_height()
+        # Two rows of tiles (apply_tile_mode's grid height) plus a heading.
+        line = self.fontMetrics().height()
+        tile = max(64, line * 3 + 16) if self._icon_mode else max(36, line * 2 + 10)
+        self._scroll.set_rows_height(2 * tile + line + 12)
         self.view_mode.blockSignals(True)
         self.view_mode.setCurrentIndex(0 if self._icon_mode else 1)
         self.view_mode.blockSignals(False)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.FontChange:
+            self._apply_view_mode()  # tile and catalog heights follow the text size
 
     def set_icon_view(self):
         self._icon_mode = True

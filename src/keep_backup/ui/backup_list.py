@@ -7,7 +7,7 @@ something a person reads. Selection is colour-only (odcs-ui DESIGN.md).
 """
 from PySide6.QtCore import QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QAbstractItemView, QLabel, QListWidget, QListWidgetItem, QStyle,
+from PySide6.QtWidgets import (QAbstractItemView, QLabel, QListView, QListWidget, QListWidgetItem, QStyle,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from keep_backup.ui import theming
@@ -38,18 +38,29 @@ class _BackupRowDelegate(QStyledItemDelegate):
             painter.setPen(QPen(QColor(c.get("BORDER", "#d1d5db")), 1))
             painter.drawLine(rect.left() + 12, rect.bottom(), rect.right(), rect.bottom())
         text = rect.adjusted(12, 7, -12, -7)
-        metrics = option.fontMetrics
+        label, detail = index.data(Qt.DisplayRole) or "", index.data(DETAIL_ROLE) or ""
+        label_h, detail_h = self._heights(option.fontMetrics, text.width(), label, detail)
         painter.setFont(option.font)
         painter.setPen(QColor(c.get("TEXT_PRIMARY", "#1a1d23")))
-        painter.drawText(QRect(text.left(), text.top(), text.width(), metrics.height()),
-                         Qt.AlignLeft | Qt.AlignVCenter, index.data(Qt.DisplayRole) or "")
+        painter.drawText(QRect(text.left(), text.top(), text.width(), label_h), self.FLAGS, label)
         painter.setPen(QColor(c.get("TEXT_SECONDARY", "#565d6b")))
-        painter.drawText(QRect(text.left(), text.top() + metrics.height() + 2, text.width(), metrics.height()),
-                         Qt.AlignLeft | Qt.AlignVCenter, index.data(DETAIL_ROLE) or "")
+        painter.drawText(QRect(text.left(), text.top() + label_h + 2, text.width(), detail_h), self.FLAGS, detail)
         painter.restore()
 
+    # Each line wraps rather than being cut off when large text makes it
+    # wider than the sidebar; at normal sizes a row is two lines, as before.
+    FLAGS = Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap
+
+    @classmethod
+    def _heights(cls, metrics, width, *texts):
+        return [max(metrics.height(), metrics.boundingRect(QRect(0, 0, max(1, width), 10000), cls.FLAGS, text).height())
+                for text in texts]
+
     def sizeHint(self, option, index):
-        return QSize(200, option.fontMetrics.height() * 2 + 16)
+        width = self.parent().viewport().width() - 24
+        label_h, detail_h = self._heights(option.fontMetrics, width, index.data(Qt.DisplayRole) or "",
+                                          index.data(DETAIL_ROLE) or "")
+        return QSize(200, label_h + 2 + detail_h + 14)
 
 
 class BackupListPanel(QWidget):
@@ -74,7 +85,11 @@ class BackupListPanel(QWidget):
         self.list.setItemDelegate(_BackupRowDelegate(self.list))
         self.list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list.setMouseTracking(True)
-        self.list.setUniformItemSizes(True)
+        # Rows grow to fit wrapped text at large sizes (_BackupRowDelegate),
+        # so heights differ and follow the list's width.
+        self.list.setUniformItemSizes(False)
+        self.list.setWordWrap(True)
+        self.list.setResizeMode(QListView.Adjust)
         self.list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self.list, 1)
