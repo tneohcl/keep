@@ -161,7 +161,7 @@ class RecoveryAccessDialog(QDialog):
         self.setWindowTitle("Recovery access")
         self.resize(min(600, int(self.screen().availableGeometry().width() * .9)), 650)
         outer = QVBoxLayout(self)
-        scroll = QScrollArea()
+        scroll = self._scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
         scroll.setWidget(content)
@@ -285,13 +285,44 @@ class RecoveryAccessDialog(QDialog):
         buttons.addWidget(close)
         buttons.addWidget(self.test_button)
         layout.addLayout(buttons)
+        self._buttons = buttons
+        # style.qss's min-width: 80px is a hard minimum, so at large text the
+        # row squeezed its labels ("Export key fil") instead of widening.
+        # Styled first (in place), or the stylesheet's 80 px replaces this.
+        for button in (self.export_button, close, self.test_button):
+            button.ensurePolished()
+            button.setMinimumWidth(button.sizeHint().width())
         self._fit()
 
     # ---- layout helpers ------------------------------------------------
     def _fit(self):
         # Word-wrapped labels in a top-level dialog: size from the real width.
+        # Wide enough for what can't wrap (the button row at large text, which
+        # otherwise scrolled sideways), within the screen; 600 px when that fits.
         self.layout().activate()
-        self.resize(self.width(), min(720, int(self.screen().availableGeometry().height() * .85)))
+        available = self.screen().availableGeometry()
+        limit = int(available.width() * .9)
+        if self._needed_width() > limit and self.export_button.parentWidget() is not None \
+                and self._buttons.indexOf(self.export_button) >= 0:
+            # Still too wide for the screen: Export key file… gets its own line
+            # above Close and Test recovery….
+            self._buttons.removeWidget(self.export_button)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 12, 0, 0)
+            row.addWidget(self.export_button)
+            row.addStretch(1)
+            content = self._scroll.widget().layout()
+            content.insertLayout(content.indexOf(self._buttons), row)
+            content.activate()
+        width = min(max(self.width(), self._needed_width()), limit)
+        self.resize(width, min(720, int(available.height() * .85)))
+
+    def _needed_width(self):
+        """The dialog width at which nothing has to scroll sideways."""
+        scroll = self._scroll
+        margins = self.layout().contentsMargins()
+        return (scroll.widget().minimumSizeHint().width() + scroll.verticalScrollBar().sizeHint().width()
+                + 2 * scroll.frameWidth() + margins.left() + margins.right())
 
     @staticmethod
     def _friendly(iso):
@@ -307,6 +338,7 @@ class RecoveryAccessDialog(QDialog):
         label = QLabel(text)
         label.setObjectName("odcsGroupHeading")
         label.setStyleSheet("padding: 0;")
+        label.setWordWrap(True)  # "Verified by Keep · Today at 9:00 AM" at large text
         return label
 
     @staticmethod

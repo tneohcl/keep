@@ -15,7 +15,7 @@ os.environ["XDG_STATE_HOME"] = str(Path(_STATE.name) / "state")
 from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtGui import QFont, QMouseEvent  # noqa: E402
 from PySide6.QtCore import QEvent, QPointF  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel, QScrollArea  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QScrollArea  # noqa: E402
 
 APP = QApplication.instance() or QApplication([])
 
@@ -55,6 +55,14 @@ class RecoveryAccess(unittest.TestCase):
         content = self.scroll.widget()
         self.assertFalse(self.scroll.horizontalScrollBar().isVisible())
         self.assertLessEqual(content.width(), self.scroll.viewport().width())
+
+    def test_buttons_keep_their_labels(self):
+        # At 22 pt (in CI's DejaVu Sans) the button row was squeezed to the
+        # stylesheet's 80 px minimum: "Export key file…" got 191 px of 262.
+        for button in self.scroll.widget().findChildren(QPushButton):
+            if button.isVisible():
+                with self.subTest(button=button.text()):
+                    self.assertGreaterEqual(button.width(), button.sizeHint().width())
 
     def test_wrapped_text_gets_its_full_height(self):
         content = self.scroll.widget()
