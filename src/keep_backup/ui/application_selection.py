@@ -1,10 +1,10 @@
 import os
 from pathlib import Path
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QEvent, Qt, QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QStyle
 from .common import DisclosureSection
-from .checkable_list import CheckableListWidget, apply_tile_mode
+from .checkable_list import CheckableListWidget, apply_tile_mode, fit_tiles
 from .restore_picker import SameHeightRow, view_switch
 from keep_backup.core import host
 
@@ -64,6 +64,7 @@ class ApplicationSelectionDialog(QDialog):
         self._row_heights = SameHeightRow(search, self.view_mode, self.select_all_button, self.clear_selection_button)
         def set_mode(index):
             apply_tile_mode(self.items, index == 0, self.fontMetrics())
+            self._fit_list()
         self.view_mode.currentChanged.connect(set_mode)
         set_mode(0)
         layout.addWidget(self.items, 1)
@@ -86,7 +87,7 @@ class ApplicationSelectionDialog(QDialog):
             item.setCheckState(Qt.Checked if (initial_all and entry["recognized"] and entry["installed"]) or entry["id"] in selected else Qt.Unchecked)
             item.setToolTip(kind + "\n" + "\n".join(str(Path(home) / p) for p in entry["paths"]))
             self.items.addItem(item)
-        self.items.update_cell_sizes()
+        self._fit_list()  # the tiles were sized before there were names to fit
         show_uninstalled = QCheckBox("Show data for uninstalled apps")
         show_uninstalled.setVisible(category == "applications")
         layout.addWidget(show_uninstalled)
@@ -125,6 +126,38 @@ class ApplicationSelectionDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         layout.addLayout(buttons)
+
+    def _fit_list(self):
+        """Tiles sized for their names, and room for two rows of them: at
+        22 pt names were cut off ("Thunder") and the dialog opened with a
+        sliver of the first row."""
+        fit_tiles(self.items)
+        frame = 2 * self.items.frameWidth()
+        self.items.setMinimumHeight(2 * self.items.gridSize().height() + frame)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.FontChange and hasattr(self, "items"):
+            self._fit_list()
+            self._fit_height()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fit_height()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def _fit_height(self):
+        """Never shorter than the content at this width: Qt's own minimum
+        counts the wrapped note as one line, and at 22 pt the checkboxes
+        were drawn over the tiles."""
+        layout = self.layout()
+        minimum = layout.totalMinimumSize()
+        height = max(minimum.height(), layout.minimumHeightForWidth(self.width()) if layout.hasHeightForWidth() else 0)
+        if (self.minimumWidth(), self.minimumHeight()) != (minimum.width(), height):
+            self.setMinimumSize(minimum.width(), height)
 
     def selection(self):
         return [self.items.item(i).data(Qt.UserRole)["id"] for i in range(self.items.count()) if self.items.item(i).checkState() == Qt.Checked]
